@@ -1,0 +1,17 @@
+{
+    "cortex-debug.armToolchainPath": "C:\\Program Files (x86)\\Arm GNU Toolchain arm-none-eabi\\12.2 mpacbti-rel1\\bin",
+    "cortex-debug.openocdPath": "C:\\Software\\openocd\\bin\\openocd.exe",
+    "files.associations": {
+        "*.ejs": "html",
+        ".clang-format": "yaml",
+        "gamestate": "stellaris",
+        "*.m": "matlab",
+        "retarget.h": "c",
+        "_ansi.h": "c",
+        "stm32h7xx_hal.h": "c",
+        "stdlib.h": "c",
+        "stddef.h": "c",
+        "reent.h": "c",
+        "cdefs.h": "c"
+    }
+}
