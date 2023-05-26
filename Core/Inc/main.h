@@ -59,6 +59,8 @@ void Error_Handler(void);
 /* Private defines -----------------------------------------------------------*/
 #define LED_Onboard_Pin GPIO_PIN_3
 #define LED_Onboard_GPIO_Port GPIOE
+#define PCM5102A_XMT_Pin GPIO_PIN_4
+#define PCM5102A_XMT_GPIO_Port GPIOE
 #define Detect_SDIO_Pin GPIO_PIN_4
 #define Detect_SDIO_GPIO_Port GPIOD
 

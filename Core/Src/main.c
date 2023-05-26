@@ -30,6 +30,7 @@
 /* USER CODE BEGIN Includes */
 #include <string.h>
 #include "retarget.h"
+#include "mp3.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -55,7 +56,6 @@
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
-static void MPU_Config(void);
 /* USER CODE BEGIN PFP */
 void HandleJsonData(cJSON* json);
 /* USER CODE END PFP */
@@ -75,8 +75,11 @@ int main(void)
 
   /* USER CODE END 1 */
 
-  /* MPU Configuration--------------------------------------------------------*/
-  MPU_Config();
+  /* Enable I-Cache---------------------------------------------------------*/
+  SCB_EnableICache();
+
+  /* Enable D-Cache---------------------------------------------------------*/
+  SCB_EnableDCache();
 
   /* MCU Configuration--------------------------------------------------------*/
 
@@ -103,9 +106,11 @@ int main(void)
   MX_USART2_UART_Init();
   MX_QUADSPI_Init();
   MX_FATFS_Init();
+  MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
   RetargetInit(&huart1);
   UART_ResetJsonRX(&huart2);
+  MP3_Init();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -116,6 +121,7 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
     UART_PollJsonData(HandleJsonData);
+    MP3_PollBuffer();
   }
   /* USER CODE END 3 */
 }
@@ -187,12 +193,26 @@ void HandleJsonData(cJSON* json) {
     cJSON* command = cJSON_GetObjectItemCaseSensitive(json, "command");
     if (cJSON_IsString(command) && (command->valuestring != NULL)) {
       if (strcmp(command->valuestring, "toggleLed") == 0) {
+        // { "command": "toggleLed" }
         HAL_GPIO_TogglePin(LED_Onboard_GPIO_Port, LED_Onboard_Pin);
         goto OK;
-      } else {
-        UART_SendString(&huart2, "{\"code\":2,\"message\":\"Unknown command\"}");
-        goto END;
+      } else if (strcmp(command->valuestring, "play") == 0) {
+        // { "command": "play", "list": ["ni1", "hao3", "ma5"] }
+        cJSON* list = cJSON_GetObjectItemCaseSensitive(json, "list");
+        if (cJSON_IsArray(list)) {
+          cJSON* listItem = NULL;
+          cJSON_ArrayForEach(listItem, list) {
+            if (cJSON_IsString(listItem) && (listItem->valuestring != NULL)) {
+              MP3_Enqueue(listItem->valuestring);
+            }
+          }
+        }
+        goto OK;
       }
+      else {
+        UART_SendString(&huart2, "{\"code\":3,\"message\":\"Unknown command\"}");
+        goto END;
+      } 
     } else {
       UART_SendString(&huart2, "{\"code\":2,\"message\":\"Bad command\"}");
       goto END;
@@ -206,35 +226,6 @@ void HandleJsonData(cJSON* json) {
   UART_ResetJsonRX(&huart2);
 }
 /* USER CODE END 4 */
-
-/* MPU Configuration */
-
-void MPU_Config(void)
-{
-  MPU_Region_InitTypeDef MPU_InitStruct = {0};
-
-  /* Disables the MPU */
-  HAL_MPU_Disable();
-
-  /** Initializes and configures the Region and the memory to be protected
-  */
-  MPU_InitStruct.Enable = MPU_REGION_ENABLE;
-  MPU_InitStruct.Number = MPU_REGION_NUMBER0;
-  MPU_InitStruct.BaseAddress = 0x0;
-  MPU_InitStruct.Size = MPU_REGION_SIZE_4GB;
-  MPU_InitStruct.SubRegionDisable = 0x87;
-  MPU_InitStruct.TypeExtField = MPU_TEX_LEVEL0;
-  MPU_InitStruct.AccessPermission = MPU_REGION_NO_ACCESS;
-  MPU_InitStruct.DisableExec = MPU_INSTRUCTION_ACCESS_DISABLE;
-  MPU_InitStruct.IsShareable = MPU_ACCESS_SHAREABLE;
-  MPU_InitStruct.IsCacheable = MPU_ACCESS_NOT_CACHEABLE;
-  MPU_InitStruct.IsBufferable = MPU_ACCESS_NOT_BUFFERABLE;
-
-  HAL_MPU_ConfigRegion(&MPU_InitStruct);
-  /* Enables the MPU */
-  HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT);
-
-}
 
 /**
   * @brief  This function is executed in case of error occurrence.

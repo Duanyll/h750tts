@@ -21,7 +21,7 @@
 #include "sdmmc.h"
 
 /* USER CODE BEGIN 0 */
-
+#include "fatfs.h"
 /* USER CODE END 0 */
 
 SD_HandleTypeDef hsd1;
@@ -135,5 +135,13 @@ void HAL_SD_MspDeInit(SD_HandleTypeDef* sdHandle)
 }
 
 /* USER CODE BEGIN 1 */
-
+void SDMMC_InitFilesystem() {
+  HAL_SD_CardCIDTypedef pCID;
+  HAL_SD_CardCSDTypedef pCSD;
+  HAL_SD_CardInfoTypeDef pCardInfo;
+  HAL_SD_GetCardCID(&hsd1, &pCID);
+  HAL_SD_GetCardCSD(&hsd1, &pCSD);
+  HAL_SD_GetCardInfo(&hsd1, &pCardInfo);
+  f_mount(&SDFatFS, SDPath, 0); /* Mount a logical drive */
+}
 /* USER CODE END 1 */

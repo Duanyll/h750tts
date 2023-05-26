@@ -41,6 +41,7 @@ Core/Src/dma.c \
 Core/Src/gpio.c \
 Core/Src/i2s.c \
 Core/Src/main.c \
+Core/Src/mp3.c \
 Core/Src/quadspi.c \
 Core/Src/retarget.c \
 Core/Src/sdmmc.c \
@@ -274,13 +275,13 @@ $(BUILD_DIR):
 # flash
 #######################################
 flash: $(BUILD_DIR)/$(TARGET).elf
-	"C:/Software/openocd/bin/openocd.exe" -f ./openocd.cfg -c "program $(BUILD_DIR)/$(TARGET).elf verify reset exit"
+	"C:/SOFTWARE/OPENOCD/BIN/OPENOCD.EXE" -f ./openocd.cfg -c "program $(BUILD_DIR)/$(TARGET).elf verify reset exit"
 
 #######################################
 # erase
 #######################################
 erase: $(BUILD_DIR)/$(TARGET).elf
-	"C:/Software/openocd/bin/openocd.exe" -f ./openocd.cfg -c "init; reset halt; stm32h7x mass_erase 0; exit"
+	"C:/SOFTWARE/OPENOCD/BIN/OPENOCD.EXE" -f ./openocd.cfg -c "init; reset halt; stm32h7x mass_erase 0; exit"
 
 #######################################
 # clean up
