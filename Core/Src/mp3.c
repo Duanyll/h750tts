@@ -6,7 +6,10 @@
  */
 
 #include "mp3.h"
+
 #include "i2s.h"
+
+#include <stdio.h>
 
 #define SPEED \
   3  // interval between characters.  2 is normal(typical) , and 3 is faster.
@@ -21,7 +24,7 @@ uint8_t FillBufFlag;    // 0:fill first half buf;1:fill second half buf;0xff do
                         // nothing
 uint32_t DmaBufSize;
 uint8_t Mp3DecodeBuf[DECODEBUFSIZE];
-uint8_t canplay;
+uint8_t isPlaying;
 FIL Mp3File;
 mp3Info Mp3Info;
 uint8_t *Readptr;  // MP3解码读指针
@@ -37,11 +40,11 @@ int currentFile, fileCount;
 int MP3_Queue[MP3_QUEUE_SIZE];  // Circular Queue
 int MP3_QueueHead, MP3_QueueTail;
 
-#define MP3_OK 0
-#define MP3_FAIL 1
-
 void HAL_I2S_TxHalfCpltCallback(I2S_HandleTypeDef *hi2s) {
   if (EndFileFlag == 0) {
+    if (FillBufFlag != 0xFF) {
+      printf("fuck\n");
+    }
     FillBufFlag = 0;
   } else if (EndFileFlag == 1) {
     memset(WaveFileBuf, 0, DmaBufSize / 2);
@@ -52,6 +55,9 @@ void HAL_I2S_TxHalfCpltCallback(I2S_HandleTypeDef *hi2s) {
 
 void HAL_I2S_TxCpltCallback(I2S_HandleTypeDef *hi2s) {
   if (EndFileFlag == 0) {
+    if (FillBufFlag != 0xFF) {
+      printf("fuck\n");
+    }
     FillBufFlag = 1;
   } else if (EndFileFlag == 1) {
     memset(&WaveFileBuf[DmaBufSize / 2], 0, DmaBufSize / 2);
@@ -61,7 +67,7 @@ void HAL_I2S_TxCpltCallback(I2S_HandleTypeDef *hi2s) {
 }
 
 int MP3_Init() {
-  canplay = 1;
+  isPlaying = 0;
   FIL dictFile;
   f_open(&dictFile, "0:/DICT.TXT", FA_READ);
   char line[50];
@@ -87,7 +93,7 @@ int MP3_Init() {
   return MP3_OK;
 }
 
-int MP3_FindFile(char* pinyin) {
+int MP3_FindFile(char *pinyin) {
   char mp3FileName[20];
   strcpy(mp3FileName, pinyin);
   strcat(mp3FileName, ".mp3");
@@ -102,7 +108,7 @@ int MP3_FindFile(char* pinyin) {
   return l;
 }
 
-int MP3_Enqueue(char* pinyin) {
+int MP3_Enqueue(char *pinyin) {
   int fileId = MP3_FindFile(pinyin);
   if (MP3_QueueHead == (MP3_QueueTail + 1) % MP3_QUEUE_SIZE) return MP3_FAIL;
   MP3_Queue[MP3_QueueTail] = fileId;
@@ -111,8 +117,8 @@ int MP3_Enqueue(char* pinyin) {
 }
 
 int MP3_StartPlayAsync(int fileId) {
-  if (canplay == 0) return MP3_FAIL;
-  canplay = 0;
+  if (isPlaying) return MP3_FAIL;
+  isPlaying = 1;
 
   uint8_t res = 0;
   uint32_t br = 0;
@@ -160,24 +166,31 @@ int MP3_StartPlayAsync(int fileId) {
     return res;
   }
   HAL_GPIO_WritePin(PCM5102A_XMT_GPIO_Port, PCM5102A_XMT_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(LED_Onboard_GPIO_Port, LED_Onboard_Pin, GPIO_PIN_SET);
   HAL_I2S_Transmit_DMA(&hi2s1, (uint16_t *)WaveFileBuf, DmaBufSize / 2);
 
   return MP3_OK;
 }
 
 int MP3_PollBuffer() {
-  if (EndFileFlag == 0) {
-    if (FillBufFlag == 0) {
-      MP3_FillBuffer(WaveFileBuf);
-      FillBufFlag = 0xFF;
-    } else if (FillBufFlag == 1) {
-      MP3_FillBuffer(&WaveFileBuf[DmaBufSize / 2]);
-      FillBufFlag = 0xFF;
+  if (isPlaying) {
+    if (EndFileFlag == 0) {
+      if (FillBufFlag == 0) {
+        MP3_FillBuffer(WaveFileBuf);
+        FillBufFlag = 0xFF;
+      } else if (FillBufFlag == 1) {
+        MP3_FillBuffer(&WaveFileBuf[DmaBufSize / 2]);
+        FillBufFlag = 0xFF;
+      }
+    } else if (EndFileFlag == 3) {
+      HAL_I2S_DMAStop(&hi2s1);
+      HAL_GPIO_WritePin(PCM5102A_XMT_GPIO_Port, PCM5102A_XMT_Pin,
+                        GPIO_PIN_RESET);
+      HAL_GPIO_WritePin(LED_Onboard_GPIO_Port, LED_Onboard_Pin, GPIO_PIN_RESET);
+      isPlaying = 0;
     }
-  } else if (EndFileFlag == 3) {
-    HAL_GPIO_WritePin(PCM5102A_XMT_GPIO_Port, PCM5102A_XMT_Pin, GPIO_PIN_RESET);
-    canplay = 1;
-
+  }
+  if (!isPlaying) {
     // Try to play next song
     if (MP3_QueueHead != MP3_QueueTail) {
       MP3_StartPlayAsync(MP3_Queue[MP3_QueueHead]);

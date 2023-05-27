@@ -23,6 +23,7 @@
 /* USER CODE BEGIN 0 */
 #include "stdio.h"
 #include "string.h"
+#include "stdlib.h"
 /* USER CODE END 0 */
 
 UART_HandleTypeDef huart1;
@@ -392,7 +393,7 @@ void UART_ResetJsonRX(UART_HandleTypeDef* huart) {
   uart_rx_buf.rx_end = uart_rx_buf.rx + UART_RX_BUF_SIZE;
   uart_rx_buf.state = UART_STATE_IDLE;
   uart_rx_buf.huart = huart;
-  HAL_UART_Receive_IT(&huart1, uart_rx_buf.rx_cur, 1);
+  HAL_UART_Receive_IT(huart, uart_rx_buf.rx_cur, 1);
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef* huart) {
@@ -421,44 +422,11 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef* huart) {
   } 
 }
 
-#define JSON_BUF_SIZE 4096
-typedef struct {
-  char* cur;
-  char* end;
-  char buf[JSON_BUF_SIZE];
-} JsonBuffer;
-
-JsonBuffer json_buf;
-
-void* UART_JsonMalloc(size_t size) {
-  if (json_buf.cur + size < json_buf.end) {
-    void* ptr = json_buf.cur;
-    json_buf.cur += size;
-    return ptr;
-  } else {
-    return NULL;
-  }
-}
-
-void UART_JsonFree(void* ptr) {
-  // Do nothing
-}
-
-void UART_ResetJsonBuffer() {
-  json_buf.cur = json_buf.buf;
-  json_buf.end = json_buf.buf + JSON_BUF_SIZE;
-
-  cJSON_Hooks hooks = {
-    .malloc_fn = UART_JsonMalloc,
-    .free_fn = UART_JsonFree
-  };
-  cJSON_InitHooks(&hooks);
-}
-
 #define UART_TX_BUF_SIZE 1024
 typedef struct {
   char tx[UART_TX_BUF_SIZE];
   int is_busy;
+  UART_HandleTypeDef* huart;
 } UartTxBuffer;
 
 UartTxBuffer uart_tx_buf;
@@ -477,6 +445,7 @@ void UART_SendJson(UART_HandleTypeDef* huart, cJSON* json) {
   } else {
     printf("UART_SendJson: JSON too large\n");
   }
+  free(str);
 }
 
 void UART_SendString(UART_HandleTypeDef* huart, char* str) {
@@ -486,26 +455,31 @@ void UART_SendString(UART_HandleTypeDef* huart, char* str) {
       // Wait for previous transmission to complete
     }
     // append newline
+    uart_tx_buf.huart = huart;
     uart_tx_buf.is_busy = 1;
     strcpy(uart_tx_buf.tx, str);
     uart_tx_buf.tx[len] = '\n';
-    HAL_UART_Transmit_DMA(huart, uart_tx_buf.tx, len + 1);
+    // HAL_UART_Transmit_DMA(huart, uart_tx_buf.tx, len + 1);
+    HAL_UART_Transmit(huart, uart_tx_buf.tx, len + 1, 1000);
+    uart_tx_buf.is_busy = 0;
   } else {
     printf("UART_SendString: String too large\n");
   }
 }
 
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef* huart) {
-  if (huart == &huart1) {
+  if (huart == uart_tx_buf.huart) {
     uart_tx_buf.is_busy = 0;
   }
 }
 
 void UART_PollJsonData(void (*callback)(cJSON* json)) {
   if (uart_rx_buf.state == UART_STATE_COMPLETE) {
-    UART_ResetJsonBuffer();
     cJSON* json = cJSON_Parse(uart_rx_buf.rx);
     (*callback)(json);
+    UART_ResetJsonRX(uart_rx_buf.huart);
+    cJSON_Delete(json);
+    free(json);
   }
 }
 /* USER CODE END 1 */

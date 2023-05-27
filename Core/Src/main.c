@@ -1,20 +1,20 @@
 /* USER CODE BEGIN Header */
 /**
-  ******************************************************************************
-  * @file           : main.c
-  * @brief          : Main program body
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2023 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
-  */
+ ******************************************************************************
+ * @file           : main.c
+ * @brief          : Main program body
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2023 STMicroelectronics.
+ * All rights reserved.
+ *
+ * This software is licensed under terms that can be found in the LICENSE file
+ * in the root directory of this software component.
+ * If no LICENSE file comes with this software, it is provided AS-IS.
+ *
+ ******************************************************************************
+ */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
@@ -28,9 +28,11 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <stdio.h>
 #include <string.h>
-#include "retarget.h"
+
 #include "mp3.h"
+#include "retarget.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -79,7 +81,7 @@ int main(void)
   SCB_EnableICache();
 
   /* Enable D-Cache---------------------------------------------------------*/
-  SCB_EnableDCache();
+  // SCB_EnableDCache();
 
   /* MCU Configuration--------------------------------------------------------*/
 
@@ -108,15 +110,19 @@ int main(void)
   MX_FATFS_Init();
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
-  RetargetInit(&huart1);
+  SDMMC_InitFilesystem();
+  RetargetInit(&huart2);
   UART_ResetJsonRX(&huart2);
   MP3_Init();
+  printf("{\"code\":0,\"message\":\"init\"}\n");
+
+  MP3_Enqueue("kai1");
+  MP3_Enqueue("ji1");
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  while (1)
-  {
+  while (1) {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -155,7 +161,7 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.PLL.PLLM = 5;
   RCC_OscInitStruct.PLL.PLLN = 160;
   RCC_OscInitStruct.PLL.PLLP = 2;
-  RCC_OscInitStruct.PLL.PLLQ = 8;
+  RCC_OscInitStruct.PLL.PLLQ = 4;
   RCC_OscInitStruct.PLL.PLLR = 2;
   RCC_OscInitStruct.PLL.PLLRGE = RCC_PLL1VCIRANGE_2;
   RCC_OscInitStruct.PLL.PLLVCOSEL = RCC_PLL1VCOWIDE;
@@ -186,44 +192,42 @@ void SystemClock_Config(void)
 
 /* USER CODE BEGIN 4 */
 void HandleJsonData(cJSON* json) {
-  if (json == NULL) {
-    UART_SendString(&huart2, "{\"code\":1,\"message\":\"Bad JSON\"}");
-    goto END;
-  } else {
+  if (json != NULL) {
     cJSON* command = cJSON_GetObjectItemCaseSensitive(json, "command");
     if (cJSON_IsString(command) && (command->valuestring != NULL)) {
       if (strcmp(command->valuestring, "toggleLed") == 0) {
         // { "command": "toggleLed" }
         HAL_GPIO_TogglePin(LED_Onboard_GPIO_Port, LED_Onboard_Pin);
-        goto OK;
+        printf("{\"code\":0,\"message\":\"OK\"}\n");
       } else if (strcmp(command->valuestring, "play") == 0) {
-        // { "command": "play", "list": ["ni1", "hao3", "ma5"] }
+        // { "command": "play", "list": ["ni3", "hao3", "ma5"] }
         cJSON* list = cJSON_GetObjectItemCaseSensitive(json, "list");
         if (cJSON_IsArray(list)) {
           cJSON* listItem = NULL;
+          int successCount = 0;
           cJSON_ArrayForEach(listItem, list) {
             if (cJSON_IsString(listItem) && (listItem->valuestring != NULL)) {
-              MP3_Enqueue(listItem->valuestring);
+              if (MP3_Enqueue(listItem->valuestring) == MP3_OK) {
+                successCount++;
+              }
             }
           }
+          printf("{\"code\":0,\"message\":\"OK %d Words\"}\n", successCount);
+        } else {
+          printf("{\"code\":2,\"message\":\"Bad list\"}\n");
         }
-        goto OK;
+      } else {
+        printf("{\"code\":3,\"message\":\"Unknown command\"}\n");
+        return;
       }
-      else {
-        UART_SendString(&huart2, "{\"code\":3,\"message\":\"Unknown command\"}");
-        goto END;
-      } 
     } else {
-      UART_SendString(&huart2, "{\"code\":2,\"message\":\"Bad command\"}");
-      goto END;
+      printf("{\"code\":2,\"message\":\"Bad command\"}\n");
+      return;
     }
+  } else {
+    printf("{\"code\":1,\"message\":\"Bad JSON\"}\n");
+    return;
   }
-
-  OK:
-  UART_SendString(&huart2, "{\"code\":0,\"message\":\"OK\"}");
-
-  END:
-  UART_ResetJsonRX(&huart2);
 }
 /* USER CODE END 4 */
 
@@ -236,8 +240,7 @@ void Error_Handler(void)
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
   __disable_irq();
-  while (1)
-  {
+  while (1) {
   }
   /* USER CODE END Error_Handler_Debug */
 }
@@ -253,8 +256,9 @@ void Error_Handler(void)
 void assert_failed(uint8_t *file, uint32_t line)
 {
   /* USER CODE BEGIN 6 */
-  /* User can add his own implementation to report the file name and line number,
-     ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+  /* User can add his own implementation to report the file name and line
+     number, ex: printf("Wrong parameters value: file %s on line %d\r\n", file,
+     line) */
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */

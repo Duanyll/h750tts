@@ -101,6 +101,10 @@ typedef __packed struct {
 /* USER CODE BEGIN Variables */
 
 /* USER CODE END Variables */
+
+#define MP3_OK 0
+#define MP3_FAIL 1
+
 uint8_t I2S_WaitFlagStateUntilTimeout(I2S_HandleTypeDef *hi2s, uint32_t Flag,
                                       uint32_t Status, uint32_t Timeout);
 int MP3_Init();
