@@ -18,13 +18,14 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+
 #include "dma.h"
 #include "fatfs.h"
+#include "gpio.h"
 #include "i2s.h"
 #include "quadspi.h"
 #include "sdmmc.h"
 #include "usart.h"
-#include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -47,7 +48,10 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-
+#define APP_ERROR(code, message) \
+  printf("{\"code\":%d,\"message\":\"%s\"}\n", code, message)
+#define APP_SUCCESS(message) \
+  printf("{\"code\":0,\"message\":\"%s\"}\n", message)
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -59,7 +63,12 @@
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
-void HandleJsonData(cJSON* json);
+void APP_HandleJsonData(cJSON* json);
+void APP_EchoCommand(cJSON* json);
+void APP_LedCommand(cJSON* json);
+void APP_PlayCommand(cJSON* json);
+void APP_StopCommand(cJSON* json);
+void APP_VolumeCommand(cJSON* json);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -68,11 +77,10 @@ void HandleJsonData(cJSON* json);
 /* USER CODE END 0 */
 
 /**
-  * @brief  The application entry point.
-  * @retval int
-  */
-int main(void)
-{
+ * @brief  The application entry point.
+ * @retval int
+ */
+int main(void) {
   /* USER CODE BEGIN 1 */
 
   /* USER CODE END 1 */
@@ -81,11 +89,12 @@ int main(void)
   SCB_EnableICache();
 
   /* Enable D-Cache---------------------------------------------------------*/
-  // SCB_EnableDCache();
+  SCB_EnableDCache();
 
   /* MCU Configuration--------------------------------------------------------*/
 
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick.
+   */
   HAL_Init();
 
   /* USER CODE BEGIN Init */
@@ -114,7 +123,6 @@ int main(void)
   RetargetInit(&huart2);
   UART_ResetJsonRX(&huart2);
   MP3_Init();
-  printf("{\"code\":0,\"message\":\"init\"}\n");
 
   MP3_Enqueue("kai1");
   MP3_Enqueue("ji1");
@@ -126,34 +134,34 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    UART_PollJsonData(HandleJsonData);
+    UART_PollJsonData(APP_HandleJsonData);
     MP3_PollBuffer();
   }
   /* USER CODE END 3 */
 }
 
 /**
-  * @brief System Clock Configuration
-  * @retval None
-  */
-void SystemClock_Config(void)
-{
+ * @brief System Clock Configuration
+ * @retval None
+ */
+void SystemClock_Config(void) {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
   /** Supply configuration update enable
-  */
+   */
   HAL_PWREx_ConfigSupply(PWR_LDO_SUPPLY);
 
   /** Configure the main internal regulator output voltage
-  */
+   */
   __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
 
-  while(!__HAL_PWR_GET_FLAG(PWR_FLAG_VOSRDY)) {}
+  while (!__HAL_PWR_GET_FLAG(PWR_FLAG_VOSRDY)) {
+  }
 
   /** Initializes the RCC Oscillators according to the specified parameters
-  * in the RCC_OscInitTypeDef structure.
-  */
+   * in the RCC_OscInitTypeDef structure.
+   */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
@@ -166,16 +174,15 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.PLL.PLLRGE = RCC_PLL1VCIRANGE_2;
   RCC_OscInitStruct.PLL.PLLVCOSEL = RCC_PLL1VCOWIDE;
   RCC_OscInitStruct.PLL.PLLFRACN = 0;
-  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
-  {
+  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) {
     Error_Handler();
   }
 
   /** Initializes the CPU, AHB and APB buses clocks
-  */
-  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
-                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2
-                              |RCC_CLOCKTYPE_D3PCLK1|RCC_CLOCKTYPE_D1PCLK1;
+   */
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK |
+                                RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2 |
+                                RCC_CLOCKTYPE_D3PCLK1 | RCC_CLOCKTYPE_D1PCLK1;
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.SYSCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_HCLK_DIV2;
@@ -184,59 +191,108 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.APB2CLKDivider = RCC_APB2_DIV2;
   RCC_ClkInitStruct.APB4CLKDivider = RCC_APB4_DIV2;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
-  {
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK) {
     Error_Handler();
   }
 }
 
 /* USER CODE BEGIN 4 */
-void HandleJsonData(cJSON* json) {
+void APP_HandleJsonData(cJSON* json) {
   if (json != NULL) {
     cJSON* command = cJSON_GetObjectItemCaseSensitive(json, "command");
     if (cJSON_IsString(command) && (command->valuestring != NULL)) {
-      if (strcmp(command->valuestring, "toggleLed") == 0) {
-        // { "command": "toggleLed" }
-        HAL_GPIO_TogglePin(LED_Onboard_GPIO_Port, LED_Onboard_Pin);
-        printf("{\"code\":0,\"message\":\"OK\"}\n");
+      if (strcmp(command->valuestring, "echo") == 0) {
+        APP_EchoCommand(json);
+      } else if (strcmp(command->valuestring, "led") == 0) {
+        APP_LedCommand(json);
       } else if (strcmp(command->valuestring, "play") == 0) {
-        // { "command": "play", "list": ["ni3", "hao3", "ma5"] }
-        cJSON* list = cJSON_GetObjectItemCaseSensitive(json, "list");
-        if (cJSON_IsArray(list)) {
-          cJSON* listItem = NULL;
-          int successCount = 0;
-          cJSON_ArrayForEach(listItem, list) {
-            if (cJSON_IsString(listItem) && (listItem->valuestring != NULL)) {
-              if (MP3_Enqueue(listItem->valuestring) == MP3_OK) {
-                successCount++;
-              }
-            }
-          }
-          printf("{\"code\":0,\"message\":\"OK %d Words\"}\n", successCount);
-        } else {
-          printf("{\"code\":2,\"message\":\"Bad list\"}\n");
-        }
+        APP_PlayCommand(json);
+      } else if (strcmp(command->valuestring, "stop") == 0) {
+        APP_StopCommand(json);
+      } else if (strcmp(command->valuestring, "volume") == 0) {
+        APP_VolumeCommand(json);
       } else {
-        printf("{\"code\":3,\"message\":\"Unknown command\"}\n");
+        APP_ERROR(2, "Unknown command");
         return;
       }
     } else {
-      printf("{\"code\":2,\"message\":\"Bad command\"}\n");
+      APP_ERROR(1, "Bad json");
       return;
     }
   } else {
-    printf("{\"code\":1,\"message\":\"Bad JSON\"}\n");
+    APP_ERROR(1, "Bad json");
     return;
+  }
+}
+
+void APP_EchoCommand(cJSON* json) {
+  // { "command": "echo", "message": "Hello World!" }
+  cJSON* message = cJSON_GetObjectItemCaseSensitive(json, "message");
+  if (cJSON_IsString(message) && (message->valuestring != NULL)) {
+    APP_SUCCESS(message->valuestring);
+  } else {
+    APP_ERROR(2, "Bad command");
+    return;
+  }
+}
+
+void APP_LedCommand(cJSON* json) {
+  // { "command": "led", "on": true | false }
+  cJSON* on = cJSON_GetObjectItemCaseSensitive(json, "on");
+  if (cJSON_IsBool(on)) {
+    if (on->valueint == 1) {
+      HAL_GPIO_WritePin(LED_Onboard_GPIO_Port, LED_Onboard_Pin, GPIO_PIN_SET);
+    } else {
+      HAL_GPIO_WritePin(LED_Onboard_GPIO_Port, LED_Onboard_Pin, GPIO_PIN_RESET);
+    }
+  } else {
+    APP_ERROR(2, "Bad command");
+    return;
+  }
+  APP_SUCCESS("OK");
+}
+
+void APP_PlayCommand(cJSON* json) {
+  // { "command": "play", "list": ["ni3", "hao3", "ma5"] }
+  cJSON* list = cJSON_GetObjectItemCaseSensitive(json, "list");
+  if (cJSON_IsArray(list)) {
+    cJSON* listItem = NULL;
+    int successCount = 0;
+    cJSON_ArrayForEach(listItem, list) {
+      if (cJSON_IsString(listItem) && (listItem->valuestring != NULL)) {
+        if (MP3_Enqueue(listItem->valuestring) == MP3_OK) {
+          successCount++;
+        }
+      }
+    }
+    APP_SUCCESS("OK");
+  } else {
+    APP_ERROR(2, "Bad command");
+  }
+}
+
+void APP_StopCommand(cJSON* json) {
+  // { "command": "stop" }
+  MP3_StopPlay();
+  APP_SUCCESS("OK");
+}
+
+void APP_VolumeCommand(cJSON* json) {
+  // { "command": "volume", "volume": 50 }
+  cJSON* volume = cJSON_GetObjectItemCaseSensitive(json, "volume");
+  if (cJSON_IsNumber(volume) && MP3_SetVolume(volume->valueint) == MP3_OK) {
+    APP_SUCCESS("OK");
+  } else {
+    APP_ERROR(2, "Bad command");
   }
 }
 /* USER CODE END 4 */
 
 /**
-  * @brief  This function is executed in case of error occurrence.
-  * @retval None
-  */
-void Error_Handler(void)
-{
+ * @brief  This function is executed in case of error occurrence.
+ * @retval None
+ */
+void Error_Handler(void) {
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
   __disable_irq();
@@ -245,16 +301,15 @@ void Error_Handler(void)
   /* USER CODE END Error_Handler_Debug */
 }
 
-#ifdef  USE_FULL_ASSERT
+#ifdef USE_FULL_ASSERT
 /**
-  * @brief  Reports the name of the source file and the source line number
-  *         where the assert_param error has occurred.
-  * @param  file: pointer to the source file name
-  * @param  line: assert_param error line source number
-  * @retval None
-  */
-void assert_failed(uint8_t *file, uint32_t line)
-{
+ * @brief  Reports the name of the source file and the source line number
+ *         where the assert_param error has occurred.
+ * @param  file: pointer to the source file name
+ * @param  line: assert_param error line source number
+ * @retval None
+ */
+void assert_failed(uint8_t* file, uint32_t line) {
   /* USER CODE BEGIN 6 */
   /* User can add his own implementation to report the file name and line
      number, ex: printf("Wrong parameters value: file %s on line %d\r\n", file,

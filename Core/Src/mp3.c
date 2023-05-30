@@ -36,15 +36,15 @@ char dict[2600][20];
 int fileLength[2600];
 int currentFile, fileCount;
 
+#define MP3_MAX_VOLUME 100
+int volume;
+
 #define MP3_QUEUE_SIZE 128
 int MP3_Queue[MP3_QUEUE_SIZE];  // Circular Queue
 int MP3_QueueHead, MP3_QueueTail;
 
 void HAL_I2S_TxHalfCpltCallback(I2S_HandleTypeDef *hi2s) {
   if (EndFileFlag == 0) {
-    if (FillBufFlag != 0xFF) {
-      printf("fuck\n");
-    }
     FillBufFlag = 0;
   } else if (EndFileFlag == 1) {
     memset(WaveFileBuf, 0, DmaBufSize / 2);
@@ -55,9 +55,6 @@ void HAL_I2S_TxHalfCpltCallback(I2S_HandleTypeDef *hi2s) {
 
 void HAL_I2S_TxCpltCallback(I2S_HandleTypeDef *hi2s) {
   if (EndFileFlag == 0) {
-    if (FillBufFlag != 0xFF) {
-      printf("fuck\n");
-    }
     FillBufFlag = 1;
   } else if (EndFileFlag == 1) {
     memset(&WaveFileBuf[DmaBufSize / 2], 0, DmaBufSize / 2);
@@ -68,6 +65,7 @@ void HAL_I2S_TxCpltCallback(I2S_HandleTypeDef *hi2s) {
 
 int MP3_Init() {
   isPlaying = 0;
+  volume = 10;
   FIL dictFile;
   f_open(&dictFile, "0:/DICT.TXT", FA_READ);
   char line[50];
@@ -105,14 +103,23 @@ int MP3_FindFile(char *pinyin) {
     else
       l = mid;
   }
+  // in case not found
+  if (strcmp(mp3FileName, dict[l]) != 0) return -1;
   return l;
 }
 
 int MP3_Enqueue(char *pinyin) {
   int fileId = MP3_FindFile(pinyin);
+  if (fileId == -1) return MP3_FAIL;
   if (MP3_QueueHead == (MP3_QueueTail + 1) % MP3_QUEUE_SIZE) return MP3_FAIL;
   MP3_Queue[MP3_QueueTail] = fileId;
   MP3_QueueTail = (MP3_QueueTail + 1) % MP3_QUEUE_SIZE;
+  return MP3_OK;
+}
+
+int MP3_SetVolume(int vol) {
+  if (vol < 0 || vol > MP3_MAX_VOLUME) return MP3_FAIL;
+  volume = vol;
   return MP3_OK;
 }
 
@@ -200,6 +207,19 @@ int MP3_PollBuffer() {
   return MP3_OK;
 }
 
+int MP3_StopPlay() {
+  if (isPlaying) {
+    HAL_I2S_DMAStop(&hi2s1);
+    HAL_GPIO_WritePin(PCM5102A_XMT_GPIO_Port, PCM5102A_XMT_Pin,
+                      GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(LED_Onboard_GPIO_Port, LED_Onboard_Pin, GPIO_PIN_RESET);
+    isPlaying = 0;
+  }
+  // Also clear queue
+  MP3_QueueHead = MP3_QueueTail = 0;
+  return MP3_OK;
+}
+
 uint32_t MP3_FillBuffer(uint8_t *Buf) {
   uint32_t br = 0;
   int32_t Offset;
@@ -244,17 +264,17 @@ uint32_t MP3_FillBuffer(uint8_t *Buf) {
   PlayPtr = (uint16_t *)Buf;
   if (Mp3Info.nChans == 2) {
     for (i = 0; i < Mp3Info.OutSamples; i++) {
-      PlayPtr[i] = Mp3Ptr[i];
+      PlayPtr[i] = Mp3Ptr[i] * volume / MP3_MAX_VOLUME;
     }
   } else {
     for (i = 0; i < Mp3Info.OutSamples; i++) {
-      PlayPtr[0] = Mp3Ptr[0];
-      PlayPtr[1] = Mp3Ptr[0];
+      PlayPtr[0] = Mp3Ptr[0] * volume / MP3_MAX_VOLUME;
+      PlayPtr[1] = Mp3Ptr[0] * volume / MP3_MAX_VOLUME;
       PlayPtr += 2;
       Mp3Ptr += 1;
     }
   }
-
+  SCB_CleanDCache_by_Addr((uint32_t *)Buf, DmaBufSize / 2);
   return MP3_OK;
 }
 

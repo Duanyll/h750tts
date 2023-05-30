@@ -35,6 +35,8 @@ asDefinitionsFile:
 # Compiler flags
 cFlags: 
   - -Wall
+  - -Wextra
+  - -Wno-pointer-sign
   - -fdata-sections
   - -ffunction-sections
 

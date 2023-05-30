@@ -195,7 +195,7 @@ CXXFLAGS += -g -gdwarf -ggdb
 endif
 
 # Add additional flags
-CFLAGS += -Wall -fdata-sections -ffunction-sections 
+CFLAGS += -Wall -Wextra -Wno-pointer-sign -fdata-sections -ffunction-sections 
 ASFLAGS += -Wall -fdata-sections -ffunction-sections 
 CXXFLAGS += 
 

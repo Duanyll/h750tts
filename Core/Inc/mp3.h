@@ -110,5 +110,7 @@ uint8_t I2S_WaitFlagStateUntilTimeout(I2S_HandleTypeDef *hi2s, uint32_t Flag,
 int MP3_Init();
 int MP3_StartPlayAsync(int fileId);
 int MP3_Enqueue(char *pinyin);
+int MP3_SetVolume(int vol);
+int MP3_StopPlay();
 int MP3_PollBuffer();
 uint32_t MP3_FillBuffer(uint8_t *Buf);
