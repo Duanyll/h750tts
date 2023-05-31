@@ -67,6 +67,7 @@ void APP_HandleJsonData(cJSON* json);
 void APP_EchoCommand(cJSON* json);
 void APP_LedCommand(cJSON* json);
 void APP_PlayCommand(cJSON* json);
+void APP_SpeakCommand(cJSON* json);
 void APP_StopCommand(cJSON* json);
 void APP_VolumeCommand(cJSON* json);
 /* USER CODE END PFP */
@@ -124,8 +125,7 @@ int main(void) {
   UART_ResetJsonRX(&huart2);
   MP3_Init();
 
-  MP3_Enqueue("kai1");
-  MP3_Enqueue("ji1");
+  MP3_Speak("开机");
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -207,6 +207,8 @@ void APP_HandleJsonData(cJSON* json) {
         APP_LedCommand(json);
       } else if (strcmp(command->valuestring, "play") == 0) {
         APP_PlayCommand(json);
+      } else if (strcmp(command->valuestring, "speak") == 0) {
+        APP_SpeakCommand(json);
       } else if (strcmp(command->valuestring, "stop") == 0) {
         APP_StopCommand(json);
       } else if (strcmp(command->valuestring, "volume") == 0) {
@@ -253,16 +255,13 @@ void APP_LedCommand(cJSON* json) {
 }
 
 void APP_PlayCommand(cJSON* json) {
-  // { "command": "play", "list": ["ni3", "hao3", "ma5"] }
+  // { "command": "play", "list": [123, 2131, 123] }
   cJSON* list = cJSON_GetObjectItemCaseSensitive(json, "list");
   if (cJSON_IsArray(list)) {
-    cJSON* listItem = NULL;
-    int successCount = 0;
-    cJSON_ArrayForEach(listItem, list) {
-      if (cJSON_IsString(listItem) && (listItem->valuestring != NULL)) {
-        if (MP3_Enqueue(listItem->valuestring) == MP3_OK) {
-          successCount++;
-        }
+    cJSON* item = NULL;
+    cJSON_ArrayForEach(item, list) {
+      if (cJSON_IsNumber(item)) {
+        MP3_Enqueue(item->valueint);
       }
     }
     APP_SUCCESS("OK");
@@ -271,9 +270,20 @@ void APP_PlayCommand(cJSON* json) {
   }
 }
 
+void APP_SpeakCommand(cJSON* json) {
+  // { "command": "speak", "text": "中文 UTF-8 字符串" }
+  cJSON* text = cJSON_GetObjectItemCaseSensitive(json, "text");
+  if (cJSON_IsString(text) && (text->valuestring != NULL)) {
+    MP3_Speak(text->valuestring);
+    APP_SUCCESS("OK");
+  } else {
+    APP_ERROR(2, "Bad command");
+  }
+}
+
 void APP_StopCommand(cJSON* json) {
   // { "command": "stop" }
-  MP3_StopPlay();
+  MP3_StopPlay(1);
   APP_SUCCESS("OK");
 }
 

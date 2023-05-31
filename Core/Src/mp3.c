@@ -11,271 +11,242 @@
 
 #include <stdio.h>
 
-#define SPEED \
-  3  // interval between characters.  2 is normal(typical) , and 3 is faster.
+FIL voice_pack_file;
+uint8_t file_buffer[MP3_FILE_BUFFER_SIZE];
+int16_t decode_buffer[MP3_DECODE_BUFFER_SIZE];
+int16_t dma_buffer[MP3_DMA_BUFFER_SIZE];
+uint32_t index_buffer[MP3_INDEX_BUFFER_SIZE];
+uint32_t dict_buffer[MP3_DICT_BUFFER_SIZE]; // Interleaved, sorted char code and file id
+int index_size;
+int dict_size;
 
-uint8_t WaveFileBuf[WAVEFILEBUFSIZE];
-uint8_t TempBuf[WAVETEMPBUFSIZE];
-wavctrl WaveCtrlData;
-uint8_t CloseFileFlag;  // 1:already open file have to close it
-uint8_t EndFileFlag;    // 1:reach the wave file end;2:wait for last
-                        // transfer;3:finish transfer stop dma
-uint8_t FillBufFlag;    // 0:fill first half buf;1:fill second half buf;0xff do
-                        // nothing
-uint32_t DmaBufSize;
-uint8_t Mp3DecodeBuf[DECODEBUFSIZE];
-uint8_t isPlaying;
-FIL Mp3File;
-mp3Info Mp3Info;
-uint8_t *Readptr;  // MP3解码读指针
-int32_t ByteLeft;  // buffer还剩余的有效数据
-uint8_t InitMp3InfoFlag;
-HMP3Decoder Mp3Decoder;
-int startAddr[2600];
-char dict[2600][20];
-int fileLength[2600];
-int currentFile, fileCount;
+int play_queue[MP3_QUEUE_SIZE];  // Circular Queue
+int play_queue_head, play_queue_tail;
 
-#define MP3_MAX_VOLUME 100
-int volume;
+Mp3DecodeState state;
 
-#define MP3_QUEUE_SIZE 128
-int MP3_Queue[MP3_QUEUE_SIZE];  // Circular Queue
-int MP3_QueueHead, MP3_QueueTail;
-
-void HAL_I2S_TxHalfCpltCallback(I2S_HandleTypeDef *hi2s) {
-  if (EndFileFlag == 0) {
-    FillBufFlag = 0;
-  } else if (EndFileFlag == 1) {
-    memset(WaveFileBuf, 0, DmaBufSize / 2);
-    EndFileFlag = 2;
-  } else if (EndFileFlag == 2)
-    EndFileFlag = 3;
-}
-
-void HAL_I2S_TxCpltCallback(I2S_HandleTypeDef *hi2s) {
-  if (EndFileFlag == 0) {
-    FillBufFlag = 1;
-  } else if (EndFileFlag == 1) {
-    memset(&WaveFileBuf[DmaBufSize / 2], 0, DmaBufSize / 2);
-    EndFileFlag = 2;
-  } else if (EndFileFlag == 2)
-    EndFileFlag = 3;
+// Parse a utf8 string to unicode, return current char code like python ord()
+uint32_t ParseUtf8(char **str) {
+  uint8_t c = **str;
+  if (c < 0x80) {
+    (*str)++;
+    return c;
+  }
+  if ((c & 0xe0) == 0xc0) {
+    (*str) += 2;
+    return ((c & 0x1f) << 6) | ((*str)[-1] & 0x3f);
+  }
+  if ((c & 0xf0) == 0xe0) {
+    (*str) += 3;
+    return ((c & 0x0f) << 12) | (((*str)[-2] & 0x3f) << 6) |
+           ((*str)[-1] & 0x3f);
+  }
+  if ((c & 0xf8) == 0xf0) {
+    (*str) += 4;
+    return ((c & 0x07) << 18) | (((*str)[-3] & 0x3f) << 12) |
+           (((*str)[-2] & 0x3f) << 6) | ((*str)[-1] & 0x3f);
+  }
+  return -1;
 }
 
 int MP3_Init() {
-  isPlaying = 0;
-  volume = 10;
-  FIL dictFile;
-  f_open(&dictFile, "0:/DICT.TXT", FA_READ);
-  char line[50];
-  int br;
-  f_read(&dictFile, line, 30, &br);
-  int i = 1;
-  while (br) {
-    char *p = strtok(line, "\t");
-    strcpy(dict[i], p);
-    p = strtok(NULL, "\t");
-    startAddr[i] = atoi(p);
-    p = strtok(NULL, "\t");
-    fileLength[i] = atoi(p) - startAddr[i];
-    i++;
-    f_read(&dictFile, line, 30, &br);
-  }
-  fileCount = i - 1;
-  f_close(&dictFile);
-  f_open(&Mp3File, "0:/TARGET", FA_READ);
+  state.isPlaying = 0;
+  state.volume = MP3_MAX_VOLUME / 2;
+  state.bufferToFill = 0;
+  state.shouldStop = 0;
+  state.outChannels = 0x03;
 
-  MP3_QueueHead = MP3_QueueTail = 0;
+  FIL fp;
+  f_open(&fp, "0:/INDEX", FA_READ);
+  f_read(&fp, index_buffer, MP3_INDEX_BUFFER_SIZE * 4, &index_size);
+  index_size /= 4;
+  f_close(&fp);
+
+  f_open(&fp, "0:/DICT", FA_READ);
+  f_read(&fp, dict_buffer, MP3_DICT_BUFFER_SIZE * 4, &dict_size);
+  dict_size /= 8;
+  f_close(&fp);
+
+  f_open(&voice_pack_file, "0:/BIN", FA_READ);
+
+  state.decoder = MP3InitDecoder();
+  play_queue_head = play_queue_tail = 0;
 
   return MP3_OK;
 }
 
-int MP3_FindFile(char *pinyin) {
-  char mp3FileName[20];
-  strcpy(mp3FileName, pinyin);
-  strcat(mp3FileName, ".mp3");
-  int l = 1, r = fileCount, mid;
-  while (l < r) {
-    mid = (l + r + 1) >> 1;
-    if (strcmp(mp3FileName, dict[mid]) < 0)
-      r = mid - 1;
-    else
-      l = mid;
+int MP3_FindIndexByCharCode(int code) {
+  // Binary search code in dict
+  int left = 0;
+  int right = dict_size - 1;
+  while (left <= right) {
+    int mid = (left + right) / 2;
+    if (dict_buffer[mid * 2] == code) {
+      return dict_buffer[mid * 2 + 1];
+    } else if (dict_buffer[mid * 2] < code) {
+      left = mid + 1;
+    } else {
+      right = mid - 1;
+    }
   }
-  // in case not found
-  if (strcmp(mp3FileName, dict[l]) != 0) return -1;
-  return l;
+  return MP3_FAIL;
 }
 
-int MP3_Enqueue(char *pinyin) {
-  int fileId = MP3_FindFile(pinyin);
-  if (fileId == -1) return MP3_FAIL;
-  if (MP3_QueueHead == (MP3_QueueTail + 1) % MP3_QUEUE_SIZE) return MP3_FAIL;
-  MP3_Queue[MP3_QueueTail] = fileId;
-  MP3_QueueTail = (MP3_QueueTail + 1) % MP3_QUEUE_SIZE;
+int MP3_Enqueue(int fileId) {
+  if (fileId < 0 || fileId >= index_size - 1) return MP3_FAIL;
+  if (play_queue_head == (play_queue_tail + 1) % MP3_QUEUE_SIZE) return MP3_FAIL;
+  play_queue[play_queue_tail] = fileId;
+  play_queue_tail = (play_queue_tail + 1) % MP3_QUEUE_SIZE;
   return MP3_OK;
+}
+
+int MP3_Speak(char* str) {
+  int successCount = 0;
+  while (*str) {
+    int code = ParseUtf8(&str);
+    if (code < 0) return MP3_FAIL;
+    int fileId = MP3_FindIndexByCharCode(code);
+    if (fileId < 0) continue;
+    if (MP3_Enqueue(fileId) == MP3_OK) successCount++;
+  }
+  return successCount;
 }
 
 int MP3_SetVolume(int vol) {
   if (vol < 0 || vol > MP3_MAX_VOLUME) return MP3_FAIL;
-  volume = vol;
+  state.volume = vol;
   return MP3_OK;
 }
 
-int MP3_StartPlayAsync(int fileId) {
-  if (isPlaying) return MP3_FAIL;
-  isPlaying = 1;
-
-  uint8_t res = 0;
-  uint32_t br = 0;
-  uint32_t Mp3DataStart = 0;
-  CloseFileFlag = 0;
-  EndFileFlag = 0;
-  FillBufFlag = 0xFF;
-  ID3V2_TagHead *TagHead;
-  CloseFileFlag = 1;
-
-  currentFile = fileId;
-
-  f_lseek(&Mp3File, startAddr[currentFile]);
-  res = f_read(&Mp3File, TempBuf, fileLength[currentFile], &br);
-
-  TagHead = (ID3V2_TagHead *)TempBuf;
-
-  if (strncmp("ID3", (const char *)TagHead->id, 3) == 0) {
-    Mp3Info.DataStart = ((uint32_t)TagHead->size[0] << 21) |
-                        ((uint32_t)TagHead->size[1] << 14) |
-                        ((uint32_t)TagHead->size[2] << 7) | TagHead->size[3];
+int MP3_DecodeFrame() {
+  int offset = MP3FindSyncWord(state.readFilePtr, state.endFilePtr - state.readFilePtr);
+  if (offset < 0) {
+    state.shouldStop = 1;
+    return MP3_FAIL;
   }
-
-  if (!Mp3Decoder) {
-    Mp3Decoder = MP3InitDecoder();
+  state.readFilePtr += offset;
+  int bytesLeft = state.endFilePtr - state.readFilePtr;
+  int err = MP3Decode(state.decoder, &state.readFilePtr, &bytesLeft,
+                      decode_buffer, 0);
+  if (err != 0) {
+    state.shouldStop = 1;
+    return MP3_FAIL;
   }
+  MP3GetLastFrameInfo(state.decoder, &state.lastFrameInfo);
+  return MP3_OK;
+}
 
-  Readptr = TempBuf;
-  ByteLeft = br;
-  InitMp3InfoFlag = 0;
-
-  while (EndFileFlag == 0) {
-    res = MP3_FillBuffer(WaveFileBuf);
-    if (res == 0) break;
-  }
-  DmaBufSize =
-      Mp3Info.OutSamples * Mp3Info.bitsPerSample * 4 / (8 * Mp3Info.nChans);
-  MP3_FillBuffer(WaveFileBuf + DmaBufSize / 2);
-  if (res != 0) {
-    if (CloseFileFlag) {
-      f_close(&Mp3File);
-      CloseFileFlag = 0;
+int MP3_FillDmaBuffer() {
+  int16_t *dmaPtr = dma_buffer + (state.bufferToFill - 1) * state.dmaBufferSize;
+  int16_t *dmaPtrStart = dmaPtr;
+  int16_t *decodePtr = decode_buffer;
+  int16_t *decodeEnd = decode_buffer + state.lastFrameInfo.outputSamps;
+  if (state.lastFrameInfo.nChans == 2) {
+    while (decodePtr < decodeEnd) {
+      int16_t left = *decodePtr++;
+      int16_t right = *decodePtr++;
+      *dmaPtr++ = (state.outChannels & 0x01) ? left * state.volume / MP3_MAX_VOLUME : 0;
+      *dmaPtr++ = (state.outChannels & 0x02) ? right * state.volume / MP3_MAX_VOLUME : 0;
     }
-    MP3FreeDecoder(Mp3Decoder);
-    return res;
+  } else {
+    while (decodePtr < decodeEnd) {
+      int16_t left = *decodePtr++;
+      *dmaPtr++ = (state.outChannels & 0x01) ? left * state.volume / MP3_MAX_VOLUME : 0;
+      *dmaPtr++ = (state.outChannels & 0x02) ? left * state.volume / MP3_MAX_VOLUME : 0;
+    }
   }
+  SCB_CleanDCache_by_Addr((uint32_t *)dmaPtrStart, state.dmaBufferSize * 2);
+  return MP3_OK;
+}
+
+int MP3_StartPlay(int fileId) {
+  if (state.isPlaying) return MP3_FAIL;
+  if (fileId < 0 || fileId >= index_size - 1) return MP3_FAIL;
+
+  int offsetInPack = index_buffer[fileId];
+  int fileLength = index_buffer[fileId + 1] - offsetInPack;
+  f_lseek(&voice_pack_file, offsetInPack);
+  f_read(&voice_pack_file, file_buffer, fileLength, &fileLength);
+
+  state.readFilePtr = file_buffer;
+  state.endFilePtr = file_buffer + fileLength;
+
+  ID3V2_TagHead *tag = (ID3V2_TagHead *)file_buffer;
+  if (strncmp("ID3", (const char *)tag->id, 3) == 0) {
+    state.readFilePtr += ((uint32_t)tag->size[0] << 21) |
+                         ((uint32_t)tag->size[1] << 14) |
+                         ((uint32_t)tag->size[2] << 7) | tag->size[3];
+  }
+
+  state.bufferToFill = 1;
+  MP3_DecodeFrame();
+  MP3FrameInfo* info = &state.lastFrameInfo;
+  state.dmaBufferSize = (info->outputSamps / info->nChans) * 2;
+  MP3_FillDmaBuffer();
+
+  state.bufferToFill = 2;
+  MP3_DecodeFrame();
+  MP3_FillDmaBuffer();
+
   HAL_GPIO_WritePin(PCM5102A_XMT_GPIO_Port, PCM5102A_XMT_Pin, GPIO_PIN_SET);
   HAL_GPIO_WritePin(LED_Onboard_GPIO_Port, LED_Onboard_Pin, GPIO_PIN_SET);
-  HAL_I2S_Transmit_DMA(&hi2s1, (uint16_t *)WaveFileBuf, DmaBufSize / 2);
+  HAL_I2S_Transmit_DMA(&hi2s1, (uint16_t *)dma_buffer, state.dmaBufferSize * 2);
+  state.isPlaying = 1;
+  state.shouldStop = 0;
+  return MP3_OK;
+}
 
+int MP3_StopPlay(int clearQueue) {
+  if (state.isPlaying) {
+    HAL_I2S_DMAStop(&hi2s1);
+    HAL_GPIO_WritePin(PCM5102A_XMT_GPIO_Port, PCM5102A_XMT_Pin, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(LED_Onboard_GPIO_Port, LED_Onboard_Pin, GPIO_PIN_RESET);
+    state.isPlaying = 0;
+    state.shouldStop = 0;
+  }
+  if (clearQueue) {
+    play_queue_head = 0;
+    play_queue_tail = 0;
+  }
   return MP3_OK;
 }
 
 int MP3_PollBuffer() {
-  if (isPlaying) {
-    if (EndFileFlag == 0) {
-      if (FillBufFlag == 0) {
-        MP3_FillBuffer(WaveFileBuf);
-        FillBufFlag = 0xFF;
-      } else if (FillBufFlag == 1) {
-        MP3_FillBuffer(&WaveFileBuf[DmaBufSize / 2]);
-        FillBufFlag = 0xFF;
+  if (state.isPlaying) {
+    if (state.bufferToFill > 0) {
+      if (state.readFilePtr >= state.endFilePtr) {
+        state.shouldStop = 1;
+      } else {
+        MP3_DecodeFrame();
+        MP3_FillDmaBuffer();
+        state.bufferToFill = 0;
       }
-    } else if (EndFileFlag == 3) {
-      HAL_I2S_DMAStop(&hi2s1);
-      HAL_GPIO_WritePin(PCM5102A_XMT_GPIO_Port, PCM5102A_XMT_Pin,
-                        GPIO_PIN_RESET);
-      HAL_GPIO_WritePin(LED_Onboard_GPIO_Port, LED_Onboard_Pin, GPIO_PIN_RESET);
-      isPlaying = 0;
-    }
+    } 
   }
-  if (!isPlaying) {
+  if (!state.isPlaying) {
     // Try to play next song
-    if (MP3_QueueHead != MP3_QueueTail) {
-      MP3_StartPlayAsync(MP3_Queue[MP3_QueueHead]);
-      MP3_QueueHead = (MP3_QueueHead + 1) % MP3_QUEUE_SIZE;
+    if (play_queue_head != play_queue_tail) {
+      MP3_StartPlay(play_queue[play_queue_head]);
+      play_queue_head = (play_queue_head + 1) % MP3_QUEUE_SIZE;
     }
   }
   return MP3_OK;
 }
 
-int MP3_StopPlay() {
-  if (isPlaying) {
-    HAL_I2S_DMAStop(&hi2s1);
-    HAL_GPIO_WritePin(PCM5102A_XMT_GPIO_Port, PCM5102A_XMT_Pin,
-                      GPIO_PIN_RESET);
-    HAL_GPIO_WritePin(LED_Onboard_GPIO_Port, LED_Onboard_Pin, GPIO_PIN_RESET);
-    isPlaying = 0;
-  }
-  // Also clear queue
-  MP3_QueueHead = MP3_QueueTail = 0;
-  return MP3_OK;
-}
-
-uint32_t MP3_FillBuffer(uint8_t *Buf) {
-  uint32_t br = 0;
-  int32_t Offset;
-  int32_t err = 0;
-  int32_t i;
-  uint16_t *PlayPtr;
-  uint16_t *Mp3Ptr;
-  MP3FrameInfo Mp3FrameInfo;
-
-  Offset =
-      MP3FindSyncWord(Readptr, ByteLeft);  // 在readptr位置,开始查找同步字符
-  if (Offset < 0)  // 没有找到同步字符,跳出帧解码循环
-  {
-    return MP3_FAIL;
-  }
-  Readptr += Offset;   // MP3读指针偏移到同步字符处.
-  ByteLeft -= Offset;  // buffer里面的有效数据个数,必须减去偏移量
-
-  if (ByteLeft < MAINBUF_SIZE * SPEED) {
-    EndFileFlag = 1;
-  }
-
-  err = MP3Decode(Mp3Decoder, &Readptr, &ByteLeft, (int16_t *)Mp3DecodeBuf,
-                  0);  // 解码一帧MP3数据
-
-  if (err != 0) {
-    return MP3_FAIL;
-  }
-
-  if (InitMp3InfoFlag == 0) {
-    MP3GetLastFrameInfo(Mp3Decoder, &Mp3FrameInfo);  // 得到刚刚解码的MP3帧信息
-    Mp3Info.bitsPerSample = Mp3FrameInfo.bitsPerSample;
-    Mp3Info.nChans = Mp3FrameInfo.nChans;
-    Mp3Info.OutSamples = Mp3FrameInfo.outputSamps;
-    Mp3Info.samprate = Mp3FrameInfo.samprate;
-    InitMp3InfoFlag = 1;
-    if (Mp3Info.bitsPerSample != 16) {
-      return MP3_FAIL;
-    }
-  }
-  Mp3Ptr = (uint16_t *)Mp3DecodeBuf;
-  PlayPtr = (uint16_t *)Buf;
-  if (Mp3Info.nChans == 2) {
-    for (i = 0; i < Mp3Info.OutSamples; i++) {
-      PlayPtr[i] = Mp3Ptr[i] * volume / MP3_MAX_VOLUME;
-    }
+void HAL_I2S_TxHalfCpltCallback(I2S_HandleTypeDef *hi2s) {
+  if (state.shouldStop) {
+    MP3_StopPlay(0);
   } else {
-    for (i = 0; i < Mp3Info.OutSamples; i++) {
-      PlayPtr[0] = Mp3Ptr[0] * volume / MP3_MAX_VOLUME;
-      PlayPtr[1] = Mp3Ptr[0] * volume / MP3_MAX_VOLUME;
-      PlayPtr += 2;
-      Mp3Ptr += 1;
-    }
+    state.bufferToFill = 1;
   }
-  SCB_CleanDCache_by_Addr((uint32_t *)Buf, DmaBufSize / 2);
-  return MP3_OK;
+}
+
+void HAL_I2S_TxCpltCallback(I2S_HandleTypeDef *hi2s) {
+  if (state.shouldStop) {
+    MP3_StopPlay(0);
+  } else {
+    state.bufferToFill = 2;
+  }
 }
 
 uint8_t I2S_WaitFlagStateUntilTimeout(I2S_HandleTypeDef *hi2s, uint32_t Flag,
