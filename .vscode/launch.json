@@ -1,32 +1,45 @@
 {
-    "configurations": [
-        {
-            "showDevDebugOutput": "parsed",
-            "cwd": "${workspaceRoot}",
-            "executable": "./build/h750tts.elf",
-            "name": "Debug STM32",
-            "request": "launch",
-            "type": "cortex-debug",
-            "servertype": "openocd",
-            "preLaunchTask": "Build STM",
-            "device": "stm32h750",
-            "configFiles": [
-                "openocd.cfg"
-            ]
-        },
-        {
-            "showDevDebugOutput": "parsed",
-            "cwd": "${workspaceRoot}",
-            "executable": "./build/h750tts.elf",
-            "name": "Attach STM32",
-            "request": "attach",
-            "type": "cortex-debug",
-            "servertype": "openocd",
-            "preLaunchTask": "Build STM",
-            "device": "stm32h750",
-            "configFiles": [
-                "openocd.cfg"
-            ]
-        }
-    ]
+  "configurations": [
+    {
+      "name": "Python: Mock Clinet",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/server/mock_client.py",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Python: Server Main",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/server/main.py",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+
+    {
+      "showDevDebugOutput": "parsed",
+      "cwd": "${workspaceRoot}",
+      "executable": "./build/h750tts.elf",
+      "name": "Debug STM32",
+      "request": "launch",
+      "type": "cortex-debug",
+      "servertype": "openocd",
+      "preLaunchTask": "Build STM",
+      "device": "stm32h750",
+      "configFiles": ["openocd.cfg"]
+    },
+    {
+      "showDevDebugOutput": "parsed",
+      "cwd": "${workspaceRoot}",
+      "executable": "./build/h750tts.elf",
+      "name": "Attach STM32",
+      "request": "attach",
+      "type": "cortex-debug",
+      "servertype": "openocd",
+      "preLaunchTask": "Build STM",
+      "device": "stm32h750",
+      "configFiles": ["openocd.cfg"]
+    }
+  ]
 }

@@ -12,6 +12,7 @@ def init():
 def speak(str):
     green_led.on()
     global uart
+    print(f'> Speak: {str}')
     data = json.dumps({"command": "speak", "text": str})
     uart.write(data)
     uart.write("\n")

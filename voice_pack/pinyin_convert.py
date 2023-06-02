@@ -42,8 +42,34 @@ tones = {
     'ǖ': 'v1',
     'ǘ': 'v2',
     'ǚ': 'v3',
-    'ǜ': 'v4',
+    'ǜ': 'v4'
 }
+
+number_to_pinyin = [
+    'yi1',
+    'er4',
+    'san1',
+    'si4',
+    'wu3',
+    'liu4',
+    'qi1',
+    'ba1',
+    'jiu3',
+    'shi2'
+]
+
+number_to_pinyin_alt = [
+    'dong4',
+    'yao1',
+    'liang3',
+    'san1',
+    'si4',
+    'wu3',
+    'lu4',
+    'guai3',
+    'ba1',
+    'jiu3'
+]
 
 def convert_line(line: str) -> str:
     code = line.split(':')[0].lstrip('U+')
@@ -58,6 +84,7 @@ def convert_line(line: str) -> str:
             break
     if not has_tone:
         pinyin += '6'
+    pinyin.replace('ü', 'v')
     return char + ' ' + pinyin + '\n'
 
 def convert_file(infile: str, outfile) -> None:

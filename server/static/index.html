@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>WebSocket Client</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body>
+    <h1>WebSocket Client</h1>
+    <div id="output"></div>
+
+    <canvas id="chart"></canvas>
+
+    <script>
+        // Establish WebSocket connection
+        const socket = new WebSocket("ws://localhost:5001");
+
+        // Variables to store the latest image and directions data
+        let latestImage = null;
+        let latestDirections = null;
+
+        // Chart.js bar chart instance
+        let chart;
+
+        // Handle received messages
+        socket.onmessage = function (event) {
+            const data = JSON.parse(event.data);
+            if (data.type === 'image') {
+                // Update the image data
+                latestImage = 'data:image/jpeg;base64,' + data.data;
+                displayData();
+            } else if (data.type === 'directions') {
+                // Update the directions data
+                latestDirections = data.data;
+                displayData();
+            } else if (data.type === 'echo') {
+                console.log(`echo ${data.id}`);
+            }
+        };
+
+        // Display the latest data
+        function displayData() {
+            const outputDiv = document.getElementById('output');
+            outputDiv.innerHTML = ''; // Clear previous content
+
+            if (latestImage) {
+                // Display the latest image
+                const image = document.createElement('img');
+                image.src = latestImage;
+                outputDiv.appendChild(image);
+            }
+
+            if (latestDirections) {
+
+                // Update the bar chart
+                updateChart();
+            }
+        }
+
+        // Initialize the bar chart
+        function initChart() {
+            const ctx = document.getElementById('chart').getContext('2d');
+            chart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'],
+                    datasets: [{
+                        label: 'Directions',
+                        data: [],
+                        backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        // Update the bar chart with the latest directions data
+        function updateChart() {
+            if (!chart) {
+                // Initialize the chart if not already initialized
+                initChart();
+            }
+
+            // Update the chart data
+            chart.data.datasets[0].data = latestDirections;
+            chart.update();
+        }
+
+        // Handle WebSocket close event
+        socket.onclose = function (event) {
+            console.log("WebSocket connection closed");
+        };
+    </script>
+</body>
+
+</html>
