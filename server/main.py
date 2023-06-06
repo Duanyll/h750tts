@@ -2,6 +2,8 @@ from __future__ import annotations
 import multiprocessing as mp
 import asyncio
 import time
+import json
+import backend.protocol_constants as C
 
 def run_inference_server(infer_queue: mp.Queue, info_queue: mp.Queue, monitor_queue: mp.Queue):
     from backend.inference_server import InferenceServer
@@ -9,9 +11,9 @@ def run_inference_server(infer_queue: mp.Queue, info_queue: mp.Queue, monitor_qu
     asyncio.run(inference_server.run())
 
 def run_monitor_server(monitor_queue: mp.Queue):
-    from backend.monitor_server import MonitorServer
-    monitor_server = MonitorServer(monitor_queue)
-    asyncio.run(monitor_server.run())
+    from backend.monitor import Monitor
+    monitor = Monitor(monitor_queue)
+    monitor.run()
 
 def run_stream_server(infer_queue: mp.Queue, info_queue: mp.Queue, monitor_queue: mp.Queue):
     from backend.stream_server import StreamServer
@@ -37,7 +39,10 @@ def main():
     # handle keyboard interrupt
     try:
         while True:
-            time.sleep(1)
+            speech = input('Enter speech: ')
+            data = { 'type': 'text', 'text': speech }
+            info_queue.put((C.TYPE_JSON, json.dumps(data).encode('utf-8'), None))
+            
     except KeyboardInterrupt:
         print('KeyboardInterrupt')
         # kill processes

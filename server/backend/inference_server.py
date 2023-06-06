@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .algotithms import DepthPredicter
+# from .algotithms import DepthPredicter, TextRecognizer
 import multiprocessing as mp
 import cv2
 import time
@@ -10,45 +10,71 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+class ClientInferenceState:
+    total_timeout = 30.0 # seconds
+    
+    direction_result: list[tuple[np.ndarray, float]]
+    direction_timeout = 1.0 # seconds
+    last_update: float
+    
+    last_ocr_time: float = 0.0
+    
+    def __init__(self, client_id: str):
+        self.client_id = client_id
+        self.direction_result = []
+        self.last_update = time.time()
+        
+    def insert_direction_result(self, direction_result: np.ndarray, timestamp: float):
+        self.last_update = timestamp
+        self.direction_result.append((direction_result, timestamp))
+        # remove old results
+        while len(self.direction_result) > 0 and self.direction_result[0][1] < timestamp - self.direction_timeout:
+            self.direction_result.pop(0)
+            
+    def insert_ocr_result(self, results: list[str], timestamp: float):
+        self.last_ocr_time = timestamp
+        self.last_update = timestamp
+        pass
+            
+    def report_results(self, info_queue: mp.Queue, monitor_queue: mp.Queue | None = None):
+        if len(self.direction_result) != 0:
+            # calculate average
+            result = np.average([result[0] for result in self.direction_result], axis=0)
+            # info_queue.put((self.client_id, result))
+            if monitor_queue is not None:
+                monitor_queue.put({'type': 'directions', 'data': result, 'client_id': self.client_id})
+    
+    def should_be_removed(self) -> bool:
+        return self.last_update < time.time() - self.total_timeout
+
 class InferenceServer:
+    clients: dict[str, ClientInferenceState]
+    batch_size = 4
     def __init__(self, infer_queue: mp.Queue, info_queue: mp.Queue, monitor_queue: mp.Queue):
         self.infer_queue = infer_queue
         self.info_queue = info_queue
         self.monitor_queue = monitor_queue
-        self.depth_predicter = DepthPredicter()
+        # self.depth_predicter = DepthPredicter()
+        # self.text_recognizer = TextRecognizer()
+        self.clients = {}
         
-        self.batch_size = 4
-
-        self.depth_client_queues = {}
-        self.depth_timeout = 1.0 # seconds
-
         self.frame_count = 0
 
 
-    def process_depth(self, depth_results):
-        # push to depth client queues
-        for client_id, depth, timestamp in depth_results:
-            if client_id not in self.depth_client_queues:
-                self.depth_client_queues[client_id] = []
-                logger.debug("New client %s for depth processing", client_id)
-            self.depth_client_queues[client_id].append((depth, timestamp))
-
-        # remove empty queues
-        for client_id in list(self.depth_client_queues.keys()):
-            while len(self.depth_client_queues[client_id]) > 0 and time.time() - self.depth_client_queues[client_id][0][1] > self.depth_timeout:
-                self.depth_client_queues[client_id].pop(0)
-            if len(self.depth_client_queues[client_id]) == 0:
-                self.depth_client_queues.pop(client_id)
-                logger.debug("Client %s timed out for depth processing", client_id)
-
-        # get depth results
-        for client_id in self.depth_client_queues:
-            depth_list = []
-            for depth, timestamp in self.depth_client_queues[client_id]:
-                depth_list.append(depth)
-            result = np.mean(depth_list, axis=0)
-            logger.debug("Update depth for client %s", client_id)
-            self.monitor_queue.put({'type': 'directions', 'data': result, 'id': client_id })
+    def process_depth(self, data_list: list[tuple[str, np.ndarray, float]]):
+        # data format (client_id, image, timestamp)
+        # All images are used to predict depth and direction
+        results = self.depth_predicter.predict_walkable_directions([data[1] for data in data_list])
+        for i, data in enumerate(data_list):
+            self.clients[data[0]].insert_direction_result(results[i], data[2])
+            
+    def process_text(self, data_list: list[tuple[str, np.ndarray, float]]):
+        # Only use image with more than 1 second interval and wider than 800 px
+        for client_id, image, timestamp in data_list:
+            if timestamp - self.clients[client_id].last_ocr_time > 1.0 and image.shape[1] > 800:
+                result = self.text_recognizer.recognize_text(image)
+                self.clients[client_id].insert_ocr_result(result, timestamp)
+                
 
     def run(self):
         logger.info("Inference server started")
@@ -86,10 +112,21 @@ class InferenceServer:
                 images.append(cv2.imdecode(np.frombuffer(data_bytes, dtype=np.uint8), cv2.IMREAD_COLOR))
             logger.debug(f'Frame {self.frame_count} processing {len(images)} images')
             
-            # predict depth
-            depth_results = (zip(client_id_list, self.depth_predicter.predict_walkable_directions(images), time_list))
-            self.process_depth(depth_results)
+            for client_id in client_id_list:
+                if client_id not in self.clients:
+                    logger.info(f'New client {client_id} connected to inference server')
+                    self.clients[client_id] = ClientInferenceState(client_id)
+            
+            data_list = list(zip(client_id_list, images, time_list))
+            self.process_depth(data_list)
+            self.process_text(data_list)
 
             logger.debug(f'Frame {self.frame_count} processed {len(images)} images')
             
             self.frame_count += 1
+            
+            for client_id in list(self.clients.keys()):
+                self.clients[client_id].report_results(self.info_queue, self.monitor_queue)
+                if self.clients[client_id].should_be_removed():
+                    logger.info(f'Have not received data from client {client_id} for {ClientInferenceState.total_timeout} seconds, removing client')
+                    self.clients.pop(client_id)

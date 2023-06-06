@@ -8,6 +8,7 @@ import numpy as np
 import torchvision.transforms as transforms
 from einops import reduce, rearrange, repeat
 import logging
+import os
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -22,13 +23,14 @@ def avg_pool(x, kernel_size = 32):
 class DepthPredicter:
     def __init__(self):
         self.midas = torch.hub.load('D:/source/MiDaS', 'DPT_Hybrid', source='local')
-        self.midas.to('cuda')
+        self.midas = self.midas.to('cuda')
+        # self.midas = torch.compile(self.midas)
         self.midas.eval()
         self.transforms = transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
         ])
-
+        
         # forward model with a dummy input to initialize
         dummy_input = torch.randn(1, 3, 384, 288).to('cuda')
         with torch.no_grad():
@@ -73,3 +75,29 @@ class DepthPredicter:
             result.append(walkable)
 
         return result
+    
+import sys
+sys.path.append(os.path.dirname(__file__))
+from ppocronnx import TextSystem
+
+class TextRecognizer:
+    def __init__(self):
+        self.text_system = TextSystem(ort_providers=['CUDAExecutionProvider'])
+        test_image = cv2.imread(os.path.join(os.path.dirname(__file__), 'ppocronnx/test.jpg'))
+        self.text_system.detect_and_ocr(test_image)
+        logger.info('TextRecognizer initialized')
+        
+    def recognize_text(self, image: np.ndarray):
+        return self.text_system.detect_and_ocr(image, drop_score=0.9)
+    
+    
+import pupil_apriltags as apriltag
+
+class AprilTagDetector:
+    def __init__(self):
+        self.detector = apriltag.Detector(families='tag36h11')
+        logger.info('AprilTagDetector initialized')
+        
+    def detect_apriltags(self, image: np.ndarray):
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        return self.detector.detect(image)  # type: ignore

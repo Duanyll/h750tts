@@ -24,7 +24,7 @@ class StreamServer:
     client_queues: dict
     info_queue_polling_thread: threading.Thread
     
-    monitor_frame_rate: float = 0.5
+    monitor_frame_rate: float = 0.01
     monitor_last_frame_time: float = 0.0
 
     def __init__(self, infer_queue: mp.Queue, info_queue: mp.Queue, monitor_queue: mp.Queue | None = None):
@@ -111,15 +111,19 @@ class StreamServer:
             writer.close()
             await writer.wait_closed()
 
-    async def put_client_queue(self, cliend_id, data_type, data_bytes):
-        if cliend_id not in self.client_queues:
-            return
-        await self.client_queues[cliend_id].put((data_type, data_bytes))
+    async def put_client_queue(self, data_type, data_bytes, cliend_id=None):
+        if cliend_id is None:
+            for cliend_id in self.client_queues:
+                await self.client_queues[cliend_id].put((data_type, data_bytes))
+        else:
+            if cliend_id not in self.client_queues:
+                return
+            await self.client_queues[cliend_id].put((data_type, data_bytes))
 
     def poll_info_queue(self, loop):
         while True:
-            cliend_id, data_type, data_bytes = self.info_queue.get()
-            asyncio.run_coroutine_threadsafe(self.put_client_queue(cliend_id, data_type, data_bytes), loop=loop)
+            data_type, data_bytes, client_id = self.info_queue.get()
+            asyncio.run_coroutine_threadsafe(self.put_client_queue(data_type, data_bytes, client_id), loop=loop)
 
     async def run(self):
         self.server = await asyncio.start_server(self.handle_client, self.host, self.port, limit=self.max_connections)

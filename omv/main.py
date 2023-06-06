@@ -1,4 +1,6 @@
-import network, time, sensor
+import network
+import time
+import sensor
 import sub_board
 import imgrequests
 import protocol
@@ -9,22 +11,24 @@ sub_board.speak("正在连接网络")
 protocol.initialize_network()
 sub_board.speak("网络连接成功")
 
-sensor.reset()                     
+sensor.reset()
 sensor.set_pixformat(sensor.RGB565)
-sensor.set_framesize(sensor.HD)    
-sensor.skip_frames(time = 2000)    
-clock = time.clock()               
+sensor.set_framesize(sensor.HD)
+sensor.skip_frames(time=2000)
+clock = time.clock()
 
 # State for directions
 last_direction = None
 direction_cooldown = time.ticks_ms()
+
+
 def update_direction(direction):
     global last_direction
     global direction_cooldown
     current_time = time.ticks_ms()
-    if direction != last_direction or current_time > direction_cooldown:
+    if current_time > direction_cooldown:
         last_direction = direction
-        last_direction_time = current_time
+        direction_cooldown = current_time
         sub_board.stop_speech()
         if direction == 'front':
             sub_board.speak("前进")
@@ -45,15 +49,18 @@ def update_direction(direction):
             sub_board.speak("向右看")
             direction_cooldown = current_time + 2000
 
+
 def update_text(text):
     # sub_board.stop_speech()
-    sub_board.speak(text) # TODO: Text priority
+    sub_board.speak(text)  # TODO: Text priority
 
 
 # Capture Mode
 capture_lp_frames = 5
-capture_hp_frames = 1
+capture_hp_frames = 0
 current_frame = 0
+
+
 def configure_capture_mode(json):
     global capture_lp_frames
     global capture_hp_frames
@@ -64,13 +71,17 @@ def configure_capture_mode(json):
 
 # Capture lp_frames frames with low quality, then capture hp_frames frames with high quality
 # Before capturing, call update_capture_mode to update the capture mode
+
+
 def update_capture_mode():
     global current_frame
     if current_frame < capture_lp_frames:
-        sensor.set_resolution(sensor.VGA)
+        sensor.set_framesize(sensor.VGA)
     else:
-        sensor.set_resolution(sensor.HD)
-    current_frame = (current_frame + 1) % (capture_lp_frames + capture_hp_frames)
+        sensor.set_framesize(sensor.HD)
+    current_frame = (
+        current_frame + 1) % (capture_lp_frames + capture_hp_frames)
+
 
 def handle_server_data(data_type, data_bytes):
     if data_type == protocol.TYPE_NONE:
@@ -105,14 +116,14 @@ def run():
                     return
                 else:
                     handle_server_data(data_type, data_bytes)
-    
+
     except Exception as e:
         sub_board.speak("连接断开")
         print(e)
     finally:
         s.close()
 
+
 while(True):
     run()
     time.sleep(2)
-    
