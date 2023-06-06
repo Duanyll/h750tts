@@ -32,22 +32,22 @@ def update_direction(direction):
         sub_board.stop_speech()
         if direction == 'front':
             sub_board.speak("前进")
-            direction_cooldown = current_time + 2000
+            direction_cooldown = current_time + 3000
         elif direction == 'left':
             sub_board.speak("靠左")
-            direction_cooldown = current_time + 1000
+            direction_cooldown = current_time + 1500
         elif direction == 'right':
             sub_board.speak("靠右")
-            direction_cooldown = current_time + 1000
+            direction_cooldown = current_time + 1500
         elif direction == 'stop':
             sub_board.speak("小心通行")
-            direction_cooldown = current_time + 2000
+            direction_cooldown = current_time + 3000
         elif direction == 'far_left':
             sub_board.speak("向左看")
-            direction_cooldown = current_time + 2000
+            direction_cooldown = current_time + 3000
         elif direction == 'far_right':
             sub_board.speak("向右看")
-            direction_cooldown = current_time + 2000
+            direction_cooldown = current_time + 3000
 
 
 def update_text(text):

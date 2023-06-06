@@ -6,6 +6,8 @@ import cv2
 import time
 import numpy as np
 import logging
+import json
+from . import protocol_constants as C
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -35,12 +37,42 @@ class ClientInferenceState:
         self.last_ocr_time = timestamp
         self.last_update = timestamp
         pass
+
+    def classify_direction(self, result: list[float]) -> str:
+        # 0 1 2 3 4 5 6 7 8 9 10 11
+        # Center: 5 6 7 8
+        n = len(result)
+        center_score = np.average(result[5:9])
+        side_score = np.max([np.max(result[0:5]) + np.max(result[9:12])])
+        mean_position = np.average(np.arange(n), weights=result) - 5.5
+        if center_score > 0.8:
+            if mean_position < -1:
+                return 'left'
+            elif mean_position > 1:
+                return 'right'
+            else:
+                return 'front'
+        else:
+            if side_score > 0.8:
+                if mean_position < -3:
+                    return 'far_left'
+                elif mean_position > 3:
+                    return 'far_right'
+                elif mean_position < 0:
+                    return 'left'
+                else:
+                    return 'right'
+            else:
+                return 'stop'
+            
+    def send_client_info(self, info_queue: mp.Queue, data: dict):
+        info_queue.put((C.TYPE_JSON, json.dumps(data).encode('utf-8'), self.client_id))
             
     def report_results(self, info_queue: mp.Queue, monitor_queue: mp.Queue | None = None):
         if len(self.direction_result) != 0:
             # calculate average
             result = np.average([result[0] for result in self.direction_result], axis=0)
-            # info_queue.put((self.client_id, result))
+            self.send_client_info(info_queue, {'type': 'directions', 'direction': self.classify_direction(result)})
             if monitor_queue is not None:
                 monitor_queue.put({'type': 'directions', 'data': result, 'client_id': self.client_id})
     
@@ -118,8 +150,8 @@ class InferenceServer:
                     self.clients[client_id] = ClientInferenceState(client_id)
             
             data_list = list(zip(client_id_list, images, time_list))
-            self.process_depth(data_list)
-            self.process_text(data_list)
+            # self.process_depth(data_list)
+            # self.process_text(data_list)
 
             logger.debug(f'Frame {self.frame_count} processed {len(images)} images')
             
