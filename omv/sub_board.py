@@ -27,3 +27,19 @@ def speak(str):
     except:
         print("Error: Speak failed.")
         return False
+
+def stop_speech():
+    global uart
+    data = json.dumps({"command": "stop"})
+    uart.write(data)
+    uart.write("\n")
+    try:
+        line = uart.readline().decode().strip()
+        res = json.loads(line)
+        if res["code"] != 0:
+            print("Error: Stop speech failed. Code %d" % res["code"])
+            return False
+        return True
+    except:
+        print("Error: Stop speech failed.")
+        return False
