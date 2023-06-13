@@ -101,3 +101,12 @@ class AprilTagDetector:
     def detect_apriltags(self, image: np.ndarray):
         image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         return self.detector.detect(image)  # type: ignore
+
+depth_predicter: DepthPredicter
+text_recognizer: TextRecognizer
+apriltag_detector: AprilTagDetector
+def load():
+    global depth_predicter, text_recognizer, apriltag_detector
+    depth_predicter = DepthPredicter()
+    # text_recognizer = TextRecognizer()
+    # apriltag_detector = AprilTagDetector()

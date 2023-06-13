@@ -27,7 +27,8 @@ def main():
     monitor_queue = mp.Queue()
 
     # create processes
-    inference_server_process = mp.Process(target=run_inference_server, args=(infer_queue, info_queue, monitor_queue))
+    inference_server_process = mp.Process(target=run_inference_server, args=(
+        infer_queue, info_queue, monitor_queue))
     monitor_server_process = mp.Process(target=run_monitor_server, args=(monitor_queue,))
     stream_server_process = mp.Process(target=run_stream_server, args=(infer_queue, info_queue, monitor_queue))
 
@@ -35,11 +36,11 @@ def main():
     inference_server_process.start()
     stream_server_process.start()
     monitor_server_process.start()
-
+    
     # handle keyboard interrupt
     try:
         while True:
-            speech = input('Enter speech: ')
+            speech = input('Enter command: ')
             data = { 'type': 'text', 'text': speech }
             info_queue.put((C.TYPE_JSON, json.dumps(data).encode('utf-8'), None))
             

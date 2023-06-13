@@ -58,5 +58,7 @@ int MP3_Init();
 int MP3_Enqueue(int fileId);
 int MP3_Speak(char *str);
 int MP3_SetVolume(int vol);
+int MP3_GetVolume();
 int MP3_StopPlay(int clearQueue);
 int MP3_PollBuffer();
+int MP3_GetIsPlaying();

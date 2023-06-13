@@ -70,6 +70,7 @@ void APP_PlayCommand(cJSON* json);
 void APP_SpeakCommand(cJSON* json);
 void APP_StopCommand(cJSON* json);
 void APP_VolumeCommand(cJSON* json);
+void APP_QueryCommand(cJSON* json);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -213,7 +214,10 @@ void APP_HandleJsonData(cJSON* json) {
         APP_StopCommand(json);
       } else if (strcmp(command->valuestring, "volume") == 0) {
         APP_VolumeCommand(json);
-      } else {
+      } else if (strcmp(command->valuestring, "query") == 0) {
+        APP_QueryCommand(json);
+      }
+      else {
         APP_ERROR(2, "Unknown command");
         return;
       }
@@ -296,6 +300,44 @@ void APP_VolumeCommand(cJSON* json) {
     APP_ERROR(2, "Bad command");
   }
 }
+
+void APP_QueryCommand(cJSON* json) {
+  /*
+    interface QueryResponseData {
+      volume: number;
+      isPlaying: boolean;
+
+      isMoving: boolean;
+      facing: number;
+      distance: number;
+    }
+
+    interface SuccessResponse<TData = void> {
+      code: 0;
+      message: string;
+      data: TData;
+    }
+  */
+
+  cJSON* data = cJSON_CreateObject(); 
+  cJSON_AddNumberToObject(data, "volume", MP3_GetVolume());
+  cJSON_AddBoolToObject(data, "isPlaying", MP3_GetIsPlaying());
+  cJSON_AddBoolToObject(data, "isMoving", cJSON_True); // TODO: Add sensor data
+  cJSON_AddNumberToObject(data, "facing", 0);
+  cJSON_AddNumberToObject(data, "distance", 100);
+
+  cJSON* response = cJSON_CreateObject();
+  cJSON_AddNumberToObject(response, "code", 0);
+  cJSON_AddStringToObject(response, "message", "OK");
+  cJSON_AddItemToObject(response, "data", data);
+
+  char* response_str = cJSON_PrintUnformatted(response);
+  printf("%s\n", response_str);
+
+  cJSON_Delete(response);
+  free(response);
+  free(response_str);
+}
 /* USER CODE END 4 */
 
 /**
@@ -307,6 +349,8 @@ void Error_Handler(void) {
   /* User can add his own implementation to report the HAL error return state */
   __disable_irq();
   while (1) {
+    HAL_GPIO_TogglePin(LED_Onboard_GPIO_Port, LED_Onboard_Pin);
+    HAL_Delay(100);
   }
   /* USER CODE END Error_Handler_Debug */
 }

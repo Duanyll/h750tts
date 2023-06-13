@@ -118,6 +118,8 @@ int MP3_SetVolume(int vol) {
   return MP3_OK;
 }
 
+int MP3_GetVolume() { return state.volume; }
+
 int MP3_DecodeFrame() {
   int offset = MP3FindSyncWord(state.readFilePtr, state.endFilePtr - state.readFilePtr);
   if (offset < 0) {
@@ -247,6 +249,10 @@ void HAL_I2S_TxCpltCallback(I2S_HandleTypeDef *hi2s) {
   } else {
     state.bufferToFill = 2;
   }
+}
+
+int MP3_GetIsPlaying() {
+  return state.isPlaying;
 }
 
 uint8_t I2S_WaitFlagStateUntilTimeout(I2S_HandleTypeDef *hi2s, uint32_t Flag,

@@ -7,8 +7,10 @@ import threading
 import time
 import logging
 import uuid
+import json
 
 from . import protocol_constants as C
+from .utils import FrameRateCounter
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -19,19 +21,18 @@ class StreamServer:
     max_connections = 1
     infer_queue: mp.Queue
     info_queue: mp.Queue
-    monitor_queue: mp.Queue | None
+    monitor_queue: mp.Queue
     server: asyncio.AbstractServer
     client_queues: dict
     info_queue_polling_thread: threading.Thread
-    
-    monitor_frame_rate: float = 0.01
-    monitor_last_frame_time: float = 0.0
+    frame_rate_counter: FrameRateCounter
 
-    def __init__(self, infer_queue: mp.Queue, info_queue: mp.Queue, monitor_queue: mp.Queue | None = None):
+    def __init__(self, infer_queue: mp.Queue, info_queue: mp.Queue, monitor_queue: mp.Queue):
         self.infer_queue = infer_queue
         self.info_queue = info_queue
         self.monitor_queue = monitor_queue
         self.client_queues = {}
+        self.frame_rate_counter = FrameRateCounter()
     
     async def read_data_packet(self, reader):
         header = await reader.readexactly(6)
@@ -66,17 +67,25 @@ class StreamServer:
         elif data_type == C.TYPE_IMAGE:
             # JPEG image
             logger.debug(f'Received image from {cliend_id}')
-            self.infer_queue.put((cliend_id, data_bytes, time.time()))
-            if self.monitor_queue is not None:
-                if time.time() - self.monitor_last_frame_time > self.monitor_frame_rate:
-                    self.monitor_last_frame_time = time.time()
-                    self.monitor_queue.put({'type': 'image', 'data': data_bytes})
+            self.infer_queue.put({
+                'type': 'client',
+                'image': data_bytes, 
+                'client_id': cliend_id, 
+                'timestamp': time.time()
+            })
+            self.monitor_queue.put({'image_bytes': data_bytes, 'nw_fps': self.frame_rate_counter.get_fps()})
+            self.frame_rate_counter.update()
         elif data_type == C.TYPE_AUDIO:
             # WAV audio
             pass  # TODO: audio processing
         elif data_type == C.TYPE_JSON:
             # JSON
-            pass  # TODO: JSON processing
+            self.infer_queue.put({
+                'type': 'client',
+                'json': json.loads(data_bytes), 
+                'client_id': cliend_id, 
+                'timestamp': time.time()
+            })
         else:
             raise Exception('Invalid data type')
 
@@ -129,9 +138,6 @@ class StreamServer:
         self.server = await asyncio.start_server(self.handle_client, self.host, self.port, limit=self.max_connections)
         addr = self.server.sockets[0].getsockname()
         logger.info(f'Stream server serving on {addr}')
-        
-        if self.monitor_queue is not None:
-            self.monitor_queue.put({'type': 'message', 'data': f'Stream server serving on {addr}'})
 
         # handle SIGKILL
         loop = asyncio.get_running_loop()

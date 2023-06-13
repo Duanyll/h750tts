@@ -26,7 +26,7 @@ def update_direction(direction):
     global last_direction
     global direction_cooldown
     current_time = time.ticks_ms()
-    if current_time > direction_cooldown:
+    if current_time > direction_cooldown or (last_direction == 'stop' and direction != 'stop'):
         last_direction = direction
         direction_cooldown = current_time
         sub_board.stop_speech()
@@ -41,7 +41,7 @@ def update_direction(direction):
             direction_cooldown = current_time + 1500
         elif direction == 'stop':
             sub_board.speak("小心通行")
-            direction_cooldown = current_time + 3000
+            direction_cooldown = current_time + 1000
         elif direction == 'far_left':
             sub_board.speak("向左看")
             direction_cooldown = current_time + 3000

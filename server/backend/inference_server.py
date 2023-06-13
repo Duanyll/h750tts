@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-# from .algotithms import DepthPredicter, TextRecognizer
 import multiprocessing as mp
 import cv2
 import time
@@ -8,44 +7,32 @@ import numpy as np
 import logging
 import json
 from . import protocol_constants as C
+from .utils import FrameRateCounter
+from . import algorithms
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
-
-class ClientInferenceState:
-    total_timeout = 30.0 # seconds
     
+class DirectionClassifier:
     direction_result: list[tuple[np.ndarray, float]]
-    direction_timeout = 1.0 # seconds
-    last_update: float
+    direction_timeout = 0.5  # seconds
     
-    last_ocr_time: float = 0.0
-    
-    def __init__(self, client_id: str):
-        self.client_id = client_id
+    def __init__(self) -> None:
         self.direction_result = []
-        self.last_update = time.time()
         
-    def insert_direction_result(self, direction_result: np.ndarray, timestamp: float):
-        self.last_update = timestamp
-        self.direction_result.append((direction_result, timestamp))
-        # remove old results
-        while len(self.direction_result) > 0 and self.direction_result[0][1] < timestamp - self.direction_timeout:
-            self.direction_result.pop(0)
-            
-    def insert_ocr_result(self, results: list[str], timestamp: float):
-        self.last_ocr_time = timestamp
-        self.last_update = timestamp
-        pass
-
-    def classify_direction(self, result: list[float]) -> str:
+    def add_image(self, image: np.ndarray, timestamp: float):
+        current_directions = algorithms.depth_predicter.predict_walkable_directions([image])
+        self.direction_result.append((current_directions[0], timestamp))
+        
+    def _classify_direction(self, result: list[float]) -> str:
         # 0 1 2 3 4 5 6 7 8 9 10 11
-        # Center: 5 6 7 8
+        # Center: 6 7
         n = len(result)
-        center_score = np.average(result[5:9])
-        side_score = np.max([np.max(result[0:5]) + np.max(result[9:12])])
-        mean_position = np.average(np.arange(n), weights=result) - 5.5
-        if center_score > 0.8:
+        center_score = np.average(result[4:8])
+        side_score = np.max([np.max(result[0:4]) + np.max(result[8:12])])
+        mean_position = (np.average(np.arange(n), weights=result) - 5.5) if np.sum(result) > 0 else 0
+        logger.debug(f'center_score: {center_score}, side_score: {side_score}, mean_position: {mean_position}')
+        if center_score > 0.3:
             if mean_position < -1:
                 return 'left'
             elif mean_position > 1:
@@ -53,7 +40,7 @@ class ClientInferenceState:
             else:
                 return 'front'
         else:
-            if side_score > 0.8:
+            if side_score > 0.5:
                 if mean_position < -3:
                     return 'far_left'
                 elif mean_position > 3:
@@ -64,53 +51,83 @@ class ClientInferenceState:
                     return 'right'
             else:
                 return 'stop'
-            
-    def send_client_info(self, info_queue: mp.Queue, data: dict):
-        info_queue.put((C.TYPE_JSON, json.dumps(data).encode('utf-8'), self.client_id))
-            
-    def report_results(self, info_queue: mp.Queue, monitor_queue: mp.Queue | None = None):
-        if len(self.direction_result) != 0:
-            # calculate average
+        
+    def get_direction(self) -> str:
+        # remove old results
+        while len(self.direction_result) > 0 and self.direction_result[0][1] < time.time() - self.direction_timeout:
+            self.direction_result.pop(0)
+        if len(self.direction_result) == 0:
+            return 'stop'
+        else:
             result = np.average([result[0] for result in self.direction_result], axis=0)
-            self.send_client_info(info_queue, {'type': 'directions', 'direction': self.classify_direction(result)})
-            if monitor_queue is not None:
-                monitor_queue.put({'type': 'directions', 'data': result, 'client_id': self.client_id})
+            return self._classify_direction(result)
+        
+    def get_monitor_data(self) -> dict:
+        if len(self.direction_result) == 0:
+            return {}
+        else:
+            result = np.average([result[0] for result in self.direction_result], axis=0)
+            return {
+                'direction': self._classify_direction(result),
+                'direction_histogram': result.tolist(),
+            }
+        
+    
+class Client:
+    timeout = 30.0 # seconds
+    mode = 'direction' # 'direction' or 'ocr'
+    direction_cooldown = 0.5 # seconds
+    def __init__(self, client_id: str) -> None:
+        self.client_id = client_id
+        self.last_update = time.time()
+        self.mode = 'direction'
+        
+        self.direction_classifier = DirectionClassifier()
+        self.direction_last_update = time.time()
+        
+    def handle_image(self, image: np.ndarray, timestamp: float):
+        self.last_update = timestamp
+        if self.mode == 'direction':
+            self.direction_classifier.add_image(image, timestamp)
+    
+    def handle_state(self, state: dict, timestamp: float):
+        pass
+    
+    def get_monitor_data(self) -> dict:
+        if self.mode == 'direction':
+            return self.direction_classifier.get_monitor_data()
+        else:
+            return {}
+    
+    def get_response(self) -> list[dict]:
+        res = []
+        if self.mode == 'direction' and time.time() - self.direction_last_update > self.direction_cooldown:
+            direction = self.direction_classifier.get_direction()
+            res.append({
+                'type': 'direction',
+                'direction': direction,
+            })
+            self.direction_last_update = time.time()
+            logger.debug(f'Client {self.client_id} direction: {direction}')
+        return res
+        
     
     def should_be_removed(self) -> bool:
-        return self.last_update < time.time() - self.total_timeout
+        return self.last_update < time.time() - self.timeout
 
 class InferenceServer:
-    clients: dict[str, ClientInferenceState]
+    clients: dict[str, Client]
     batch_size = 4
     def __init__(self, infer_queue: mp.Queue, info_queue: mp.Queue, monitor_queue: mp.Queue):
         self.infer_queue = infer_queue
         self.info_queue = info_queue
         self.monitor_queue = monitor_queue
-        # self.depth_predicter = DepthPredicter()
-        # self.text_recognizer = TextRecognizer()
         self.clients = {}
-        
-        self.frame_count = 0
-
-
-    def process_depth(self, data_list: list[tuple[str, np.ndarray, float]]):
-        # data format (client_id, image, timestamp)
-        # All images are used to predict depth and direction
-        results = self.depth_predicter.predict_walkable_directions([data[1] for data in data_list])
-        for i, data in enumerate(data_list):
-            self.clients[data[0]].insert_direction_result(results[i], data[2])
-            
-    def process_text(self, data_list: list[tuple[str, np.ndarray, float]]):
-        # Only use image with more than 1 second interval and wider than 800 px
-        for client_id, image, timestamp in data_list:
-            if timestamp - self.clients[client_id].last_ocr_time > 1.0 and image.shape[1] > 800:
-                result = self.text_recognizer.recognize_text(image)
-                self.clients[client_id].insert_ocr_result(result, timestamp)
-                
+        algorithms.load()
+        self.frame_rate_counter = FrameRateCounter()
 
     def run(self):
         logger.info("Inference server started")
-        self.monitor_queue.put({'type': 'message', 'data': 'Inference server started'})
         while True:
             if self.infer_queue.qsize() > self.batch_size * 2:
                 # drop old data
@@ -120,45 +137,45 @@ class InferenceServer:
             if self.infer_queue.empty():
                 time.sleep(0.01)
                 continue
-            # data format (client_id, data_bytes, timestamp)
-            client_id_list = []
-            data_list = []
-            time_list = []
-            # get at least one data
-            client_id, data_bytes, timestamp = self.infer_queue.get()
-            client_id_list.append(client_id)
-            data_list.append(data_bytes)
-            time_list.append(timestamp)
-            # try to get more data (up to batch size) in non-blocking mode
-            for _ in range(self.batch_size - 1):
-                try:
-                    client_id, data_bytes, timestamp = self.infer_queue.get(block=False)
-                    client_id_list.append(client_id)
-                    data_list.append(data_bytes)
-                    time_list.append(timestamp)
-                except:
-                    break
-            # decode images
-            images = []
-            for data_bytes in data_list:
-                images.append(cv2.imdecode(np.frombuffer(data_bytes, dtype=np.uint8), cv2.IMREAD_COLOR))
-            logger.debug(f'Frame {self.frame_count} processing {len(images)} images')
             
-            for client_id in client_id_list:
-                if client_id not in self.clients:
-                    logger.info(f'New client {client_id} connected to inference server')
-                    self.clients[client_id] = ClientInferenceState(client_id)
+            # get data
+            data = self.infer_queue.get()
             
-            data_list = list(zip(client_id_list, images, time_list))
-            # self.process_depth(data_list)
-            # self.process_text(data_list)
-
-            logger.debug(f'Frame {self.frame_count} processed {len(images)} images')
+            """
+            data format: {
+                'type': 'client'
+                'client_id': str,
+                'timestamp': float,
+                'image'?: bytes,
+                'state'?: dict,
+            }
+            """
             
-            self.frame_count += 1
+            if data['type'] == 'client':
+                if data['client_id'] not in self.clients:
+                    self.clients[data['client_id']] = Client(data['client_id'])
+                client = self.clients[data['client_id']]
+                if 'image' in data:
+                    # decode image
+                    image = cv2.imdecode(np.frombuffer(data['image'], dtype=np.uint8), cv2.IMREAD_COLOR)
+                    client.handle_image(image, data['timestamp'])
+                if 'state' in data:
+                    client.handle_state(data['state'], data['timestamp'])
+            elif data['type'] == 'console':
+                pass # TODO: handle console commands
             
             for client_id in list(self.clients.keys()):
-                self.clients[client_id].report_results(self.info_queue, self.monitor_queue)
                 if self.clients[client_id].should_be_removed():
-                    logger.info(f'Have not received data from client {client_id} for {ClientInferenceState.total_timeout} seconds, removing client')
-                    self.clients.pop(client_id)
+                    del self.clients[client_id]
+                else:
+                    client = self.clients[client_id]
+                    responses = client.get_response()
+                    for response in responses:
+                        self.info_queue.put((C.TYPE_JSON, json.dumps(response).encode('utf-8'), client_id))
+                        
+            self.frame_rate_counter.update()
+            # get monitor data from first client
+            if len(self.clients) > 0:
+                monitor_data = self.clients[list(self.clients.keys())[0]].get_monitor_data()
+                monitor_data['fps'] = self.frame_rate_counter.get_fps()
+                self.monitor_queue.put(monitor_data)
