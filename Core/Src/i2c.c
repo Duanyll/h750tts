@@ -137,12 +137,12 @@ void HAL_I2C_MspDeInit(I2C_HandleTypeDef* i2cHandle)
 
 /* USER CODE BEGIN 1 */
 /**
-  * @brief  写寄存器，这是提供给上层的接�?
+  * @brief  写寄存器，这是提供给上层的接口
 	* @param  slave_addr: 从机地址
-	* @param 	reg_addr:寄存器地�?
+	* @param 	reg_addr:寄存器地址
 	* @param len：写入的长度
 	*	@param data_ptr:指向要写入的数据
-  * @retval 正常�?0，不正常为非0
+  * @retval 正常0，不正常为非0
   */
 int Sensors_I2C_WriteRegister(unsigned char slave_addr,
                                         unsigned char reg_addr,
@@ -151,7 +151,7 @@ int Sensors_I2C_WriteRegister(unsigned char slave_addr,
 {
 	HAL_StatusTypeDef status = HAL_OK;
 	status = HAL_I2C_Mem_Write(&hi2c1, slave_addr, reg_addr, I2C_MEMADD_SIZE_8BIT,data_ptr, len,I2C_FLAG_TIMEOUT); 
-	/* �?查�?�讯状�?? */
+	/* �?查�?�讯状�?? */
 	if(status != HAL_OK)
 	{
 		/* 总线出错处理 */
@@ -160,7 +160,7 @@ int Sensors_I2C_WriteRegister(unsigned char slave_addr,
 	{
 		
 	}
-	/* �?查SENSOR是否就绪进行下一次读写操�? */
+	/* �?查SENSOR是否就绪进行下一次读写操�? */
 	while (HAL_I2C_IsDeviceReady(&hi2c1, slave_addr, I2C_FLAG_TIMEOUT, I2C_FLAG_TIMEOUT) == HAL_TIMEOUT);
 	/* 等待传输结束 */
 	while (HAL_I2C_GetState(&hi2c1) != HAL_I2C_STATE_READY)
@@ -171,12 +171,12 @@ int Sensors_I2C_WriteRegister(unsigned char slave_addr,
 }
 
 /**
-  * @brief  读寄存器，这是提供给上层的接�?
+  * @brief  读寄存器，这是提供给上层的接�?
 	* @param  slave_addr: 从机地址
-	* @param 	reg_addr:寄存器地�?
-	* @param len：要读取的长�?
+	* @param 	reg_addr:寄存器地�?
+	* @param len：要读取的长�?
 	*	@param data_ptr:指向要存储数据的指针
-  * @retval 正常�?0，不正常为非0
+  * @retval 正常�?0，不正常为非0
   */
 int Sensors_I2C_ReadRegister(unsigned char slave_addr,
                                        unsigned char reg_addr,
@@ -185,7 +185,7 @@ int Sensors_I2C_ReadRegister(unsigned char slave_addr,
 {
 	HAL_StatusTypeDef status = HAL_OK;
 	status =HAL_I2C_Mem_Read(&hi2c1,slave_addr,reg_addr,I2C_MEMADD_SIZE_8BIT,data_ptr,len,I2C_FLAG_TIMEOUT);    
-	/* �?查�?�讯状�?? */
+	/* �?查�?�讯状�?? */
 	if(status != HAL_OK)
 	{
 		/* 总线出错处理 */
@@ -194,7 +194,7 @@ int Sensors_I2C_ReadRegister(unsigned char slave_addr,
 	{
 		
 	}
-	/* �?查SENSOR是否就绪进行下一次读写操�? */
+	/* �?查SENSOR是否就绪进行下一次读写操�? */
 	while (HAL_I2C_IsDeviceReady(&hi2c1, slave_addr, I2C_FLAG_TIMEOUT, I2C_FLAG_TIMEOUT) == HAL_TIMEOUT);
 	/* 等待传输结束 */
 	while (HAL_I2C_GetState(&hi2c1) != HAL_I2C_STATE_READY)

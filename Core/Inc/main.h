@@ -65,7 +65,7 @@ void Error_Handler(void);
 #define Detect_SDIO_GPIO_Port GPIOD
 
 /* USER CODE BEGIN Private defines */
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin);
+
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus
