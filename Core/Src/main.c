@@ -22,6 +22,7 @@
 #include "dma.h"
 #include "fatfs.h"
 #include "gpio.h"
+#include "i2c.h"
 #include "i2s.h"
 #include "quadspi.h"
 #include "sdmmc.h"
@@ -32,7 +33,12 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "dmpKey.h"
+#include "dmpmap.h"
+#include "inv_mpu.h"
+#include "inv_mpu_dmp_motion_driver.h"
 #include "mp3.h"
+#include "mpu6050.h"
 #include "retarget.h"
 /* USER CODE END Includes */
 
@@ -120,9 +126,12 @@ int main(void) {
   MX_QUADSPI_Init();
   MX_FATFS_Init();
   MX_USART3_UART_Init();
+  MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
   SDMMC_InitFilesystem();
   RetargetInit(&huart2);
+  mpu_dmp_init();
+  MPU_Init();  //=====初始化MPU6050
   UART_ResetJsonRX(&huart2);
   MP3_Init();
 
@@ -216,8 +225,7 @@ void APP_HandleJsonData(cJSON* json) {
         APP_VolumeCommand(json);
       } else if (strcmp(command->valuestring, "query") == 0) {
         APP_QueryCommand(json);
-      }
-      else {
+      } else {
         APP_ERROR(2, "Unknown command");
         return;
       }
@@ -319,10 +327,10 @@ void APP_QueryCommand(cJSON* json) {
     }
   */
 
-  cJSON* data = cJSON_CreateObject(); 
+  cJSON* data = cJSON_CreateObject();
   cJSON_AddNumberToObject(data, "volume", MP3_GetVolume());
   cJSON_AddBoolToObject(data, "isPlaying", MP3_GetIsPlaying());
-  cJSON_AddBoolToObject(data, "isMoving", cJSON_True); // TODO: Add sensor data
+  cJSON_AddBoolToObject(data, "isMoving", cJSON_True);  // TODO: Add sensor data
   cJSON_AddNumberToObject(data, "facing", 0);
   cJSON_AddNumberToObject(data, "distance", 100);
 

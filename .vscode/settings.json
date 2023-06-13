@@ -1,6 +1,4 @@
 {
-    "cortex-debug.armToolchainPath": "D:\\Software\\arm-gnu-toolchain-12.2.mpacbti-rel1-mingw-w64-i686-arm-none-eabi\\bin",
-    "cortex-debug.openocdPath": "D:\\SOFTWARE\\OPENOCD\\BIN\\OPENOCD.EXE",
     "files.associations": {
         "*.ejs": "html",
         ".clang-format": "yaml",
@@ -15,9 +13,13 @@
         "reent.h": "c",
         "cdefs.h": "c",
         "ff.h": "c",
-        "mp3dec.h": "c"
+        "mp3dec.h": "c",
+        "usart.h": "c",
+        "main.h": "c",
+        "i2c.h": "c",
+        "mpu6050.h": "c",
+        "inv_mpu.h": "c"
     },
     "C_Cpp.clang_format_style": "Google",
-    "cmake.sourceDirectory": "D:/source/stm32/h750tts/voice_pack",
     "python.analysis.typeCheckingMode": "basic",
 }
