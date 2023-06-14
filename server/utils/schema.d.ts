@@ -80,7 +80,7 @@ declare namespace Server {
     interface TextResponse {
         type: "text";
         text: string;
-        priority: number;
+        textType: 'broadcast' | 'background' | 'focus';
     }
 
     type Response = SubBoardResponse | DirectionResponse | TextResponse;

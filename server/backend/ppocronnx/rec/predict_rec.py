@@ -24,7 +24,7 @@ from .rec_decoder import CTCLabelDecode
 
 logger = logging
 character_dict = get_character_dict()
-rec_model_file = 'ch_ppocr_server_v2.0_rec_infer.onnx'
+rec_model_file = 'ch_PP-OCRv2_rec_infer.onnx'
 
 
 class TextRecognizer(object):

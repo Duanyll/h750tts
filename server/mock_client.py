@@ -12,7 +12,7 @@ try:
     cap = cv2.VideoCapture(0)
     while True:
         ret, frame = cap.read()
-        # compress frame to JPEG
+        frame = cv2.resize(frame, (800, 600))
         image_bytes = bytes(cv2.imencode('.jpg', frame)[1])
         
         # send image
@@ -36,7 +36,7 @@ try:
                 # JSON
                 print(body.decode('utf-8'))
         
-        # time.sleep(0.05)
+        time.sleep(0.1)
 finally:
     s.sendall(b'\x19\x26\x08\x17\x00\x01')
     s.close()

@@ -17,7 +17,12 @@ class Monitor:
             'direction_histogram': [0] * 12,
             'fps': 0,
             'nw_fps': 0,
+            'ocr_boxes': [],
+            'hand_pos': None,
+            'focus_pos': None
         }
+        self.w_scale = 1.
+        self.h_scale = 1.
 
     def get_score_color(self, score: float) -> tuple[int, int, int]:
         # Transit 0 -> 1, Red -> Green
@@ -47,6 +52,20 @@ class Monitor:
         # draw direction: bottom left
         cv2.putText(image, self.state['direction'], (10, self.height - 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        # draw ocr boxes: overlay on image
+        if len(self.state['ocr_boxes']) > 0:
+            boxes = np.array(self.state['ocr_boxes'])
+            boxes[:, :, 0] *= self.w_scale
+            boxes[:, :, 1] *= self.h_scale
+            cv2.polylines(image, boxes.astype(np.int32), True, (0, 255, 0), 2)
+        # draw hand position: circle on image
+        if self.state['hand_pos'] is not None:
+            hand_pos = (int(self.state['hand_pos'][0] * self.w_scale), int(self.state['hand_pos'][1] * self.h_scale))
+            cv2.circle(image, hand_pos, 10, (0, 0, 255), -1)
+            # draw line to focus position
+            if self.state['focus_pos'] is not None:
+                focus_pos = (int(self.state['focus_pos'][0] * self.w_scale), int(self.state['focus_pos'][1] * self.h_scale))
+                cv2.line(image, hand_pos, focus_pos, (0, 0, 255), 2)
         return image
 
     def run(self):
@@ -54,6 +73,9 @@ class Monitor:
             data = self.monitor_queue.get()
             if 'image_bytes' in data:
                 data['image'] = cv2.imdecode(np.frombuffer(data['image_bytes'], dtype=np.uint8), cv2.IMREAD_COLOR)
+                data_height, data_width, _ = data['image'].shape
+                self.w_scale = self.width / data_width
+                self.h_scale = self.height / data_height
                 data['image'] = cv2.resize(data['image'], (self.width, self.height))
                 del data['image_bytes']
             self.state.update(data)

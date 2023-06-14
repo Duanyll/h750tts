@@ -9,8 +9,9 @@ import torchvision.transforms as transforms
 from einops import reduce, rearrange, repeat
 import logging
 import os
+import time
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
@@ -79,17 +80,20 @@ class DepthPredicter:
 import sys
 sys.path.append(os.path.dirname(__file__))
 from ppocronnx import TextSystem
+from ppocronnx.predict_system import BoxedResult
 
 class TextRecognizer:
     def __init__(self):
-        self.text_system = TextSystem(ort_providers=['CUDAExecutionProvider'])
+        self.text_system = TextSystem(ort_providers=['CPUExecutionProvider'])
         test_image = cv2.imread(os.path.join(os.path.dirname(__file__), 'ppocronnx/test.jpg'))
         self.text_system.detect_and_ocr(test_image)
         logger.info('TextRecognizer initialized')
         
-    def recognize_text(self, image: np.ndarray):
-        return self.text_system.detect_and_ocr(image, drop_score=0.9)
-    
+    def recognize_text(self, image: np.ndarray) -> list[BoxedResult]:
+        start_time = time.time()
+        res = self.text_system.detect_and_ocr(image, drop_score=0.9)
+        logger.debug(f'TextRecognizer recognize_text time: {time.time() - start_time}')
+        return res 
     
 import pupil_apriltags as apriltag
 
@@ -102,11 +106,33 @@ class AprilTagDetector:
         image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         return self.detector.detect(image)  # type: ignore
 
+import mediapipe as mp
+mp_hands = mp.solutions.hands # type: ignore
+class HandDetector:
+    def __init__(self) -> None:
+        self.hands = mp_hands.Hands(model_complexity=0,
+                                    min_detection_confidence=0.5,
+                                    min_tracking_confidence=0.5)
+        logger.info('HandDetector initialized')
+        
+    def detect_index_position(self, image: np.ndarray):
+        image.flags.writeable = False
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        results = self.hands.process(image)
+        if results.multi_hand_landmarks:
+            h, w, _ = image.shape
+            return int(results.multi_hand_landmarks[0].landmark[8].x * w), \
+                   int(results.multi_hand_landmarks[0].landmark[8].y * h)
+        else:
+            return None, None
+
 depth_predicter: DepthPredicter
 text_recognizer: TextRecognizer
 apriltag_detector: AprilTagDetector
+hand_detector: HandDetector
 def load():
-    global depth_predicter, text_recognizer, apriltag_detector
-    depth_predicter = DepthPredicter()
-    # text_recognizer = TextRecognizer()
+    global depth_predicter, text_recognizer, apriltag_detector, hand_detector
+    # depth_predicter = DepthPredicter()
+    text_recognizer = TextRecognizer()
     # apriltag_detector = AprilTagDetector()
+    hand_detector = HandDetector()
