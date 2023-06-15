@@ -1,5 +1,9 @@
 #include "mpu6050.h"
 #include "i2c.h"
+#include "dmpKey.h"
+#include "dmpmap.h"
+#include "inv_mpu.h"
+#include "inv_mpu_dmp_motion_driver.h"
  /**************************************************************************
  作  者 ：大鱼电子
 淘宝地址：https://shop119207236.taobao.com
@@ -7,6 +11,12 @@
 //初始化MPU6050
 //返回值:0,成功
 //其他,错误代码
+
+struct MpuData{
+	float pitch,roll,yaw;
+	short a1,a2,a3;
+}mpuData;
+
 u8 MPU_Init(void)
 { 
 	u8 res; 
@@ -160,3 +170,25 @@ u8 MPU_Read_Byte(u8 reg)
 }
 
 
+void MPU6050_freshData(){
+	float pitch,roll,yaw;
+	short acc1,acc2,acc3;
+	int res=mpu_dmp_get_data(&pitch,&roll,&yaw,&acc1,&acc2,&acc3);
+	if(res==0){
+		mpuData.a1=acc1;
+		mpuData.a2=acc2;
+		mpuData.a3=acc3;
+		mpuData.pitch=pitch;
+		mpuData.roll=roll;
+		mpuData.yaw=yaw;
+	}
+}
+
+void MPU6050_getData(float *pitch,float *roll,float* yaw,short *a1,short *a2,short *a3){
+	*pitch=mpuData.pitch;
+	*roll=mpuData.roll;
+	*yaw=mpuData.yaw;
+	*a1=mpuData.a1;
+	*a2=mpuData.a2;
+	*a3=mpuData.a3;
+}

@@ -22,4 +22,6 @@
     },
     "C_Cpp.clang_format_style": "Google",
     "python.analysis.typeCheckingMode": "basic",
+    "cortex-debug.armToolchainPath": "C:\\PROGRAM FILES (X86)\\ARM GNU TOOLCHAIN ARM-NONE-EABI\\12.2 MPACBTI-REL1\\BIN",
+    "cortex-debug.openocdPath": "C:\\PROGRAM FILES (X86)\\OPENOCD-20230202-0.12.0\\BIN\\OPENOCD.EXE",
 }
