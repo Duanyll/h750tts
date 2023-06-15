@@ -113,6 +113,9 @@ short MPU_Get_Temperature(void);
 u8 MPU_Get_Gyroscope(short *gx,short *gy,short *gz);
 u8 MPU_Get_Accelerometer(short *ax,short *ay,short *az);
 
+void MPU6050_freshData();
+void MPU6050_getData(float *pitch,float *roll,float* yaw,short *a1,short *a2,short *a3);
+
 #endif
 
 

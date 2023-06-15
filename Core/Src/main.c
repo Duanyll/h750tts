@@ -63,7 +63,8 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
+#define MOVING_UPPER_BOUND 1.1
+#define MOVING_LOWER_BOUND 0.9
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -130,8 +131,8 @@ int main(void) {
   /* USER CODE BEGIN 2 */
   SDMMC_InitFilesystem();
   RetargetInit(&huart2);
+  MPU_Init();  
   mpu_dmp_init();
-  MPU_Init();  //=====初始化MPU6050
   UART_ResetJsonRX(&huart2);
   MP3_Init();
 
@@ -145,6 +146,7 @@ int main(void) {
 
     /* USER CODE BEGIN 3 */
     UART_PollJsonData(APP_HandleJsonData);
+    MPU6050_freshData();//MPU6050_get_data is not very steady. So I will get data frequently and store the last available one.
     MP3_PollBuffer();
   }
   /* USER CODE END 3 */
@@ -326,12 +328,20 @@ void APP_QueryCommand(cJSON* json) {
       data: TData;
     }
   */
+ 
+  short directedAccelration[3];
+  float pitch,roll,yaw;
+  double totalAccelration;
+  MPU6050_getData(&pitch,&roll,&yaw,&directedAccelration[0],&directedAccelration[1],&directedAccelration[2]);
+  totalAccelration=sqrt(1.0*directedAccelration[0]*directedAccelration[0]+1.0*directedAccelration[1]*directedAccelration[1]+1.0*directedAccelration[2]*directedAccelration[2]);
+  totalAccelration=totalAccelration/16384.0;
+  //printf("totalAccelration:%d\n",(int)(totalAccelration*100));//adjust bounds by testing.
 
   cJSON* data = cJSON_CreateObject();
   cJSON_AddNumberToObject(data, "volume", MP3_GetVolume());
   cJSON_AddBoolToObject(data, "isPlaying", MP3_GetIsPlaying());
-  cJSON_AddBoolToObject(data, "isMoving", cJSON_True);  // TODO: Add sensor data
-  cJSON_AddNumberToObject(data, "facing", 0);
+  cJSON_AddBoolToObject(data, "isMoving", totalAccelration>MOVING_UPPER_BOUND||totalAccelration<MOVING_LOWER_BOUND);  
+  cJSON_AddNumberToObject(data, "facing", (int)pitch);
   cJSON_AddNumberToObject(data, "distance", 100);
 
   cJSON* response = cJSON_CreateObject();
