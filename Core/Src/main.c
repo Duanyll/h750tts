@@ -18,15 +18,16 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+
 #include "dma.h"
 #include "fatfs.h"
+#include "gpio.h"
 #include "i2c.h"
 #include "i2s.h"
 #include "quadspi.h"
 #include "sdmmc.h"
 #include "tim.h"
 #include "usart.h"
-#include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -63,7 +64,8 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
+#define MOVING_UPPER_BOUND 1.1
+#define MOVING_LOWER_BOUND 0.9
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -85,11 +87,10 @@ void APP_QueryCommand(cJSON* json);
 /* USER CODE END 0 */
 
 /**
-  * @brief  The application entry point.
-  * @retval int
-  */
-int main(void)
-{
+ * @brief  The application entry point.
+ * @retval int
+ */
+int main(void) {
   /* USER CODE BEGIN 1 */
 
   /* USER CODE END 1 */
@@ -102,7 +103,8 @@ int main(void)
 
   /* MCU Configuration--------------------------------------------------------*/
 
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick.
+   */
   HAL_Init();
 
   /* USER CODE BEGIN Init */
@@ -134,8 +136,8 @@ int main(void)
   /* USER CODE BEGIN 2 */
   SDMMC_InitFilesystem();
   RetargetInit(&huart2);
+  MPU_Init();
   mpu_dmp_init();
-  MPU_Init();  //
   UART_ResetJsonRX(&huart2);
   MP3_Init();
 
@@ -149,33 +151,35 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
     UART_PollJsonData(APP_HandleJsonData);
+    MPU6050_freshData();  // MPU6050_get_data is not very steady. So I will get
+                          // data frequently and store the last available one.
     MP3_PollBuffer();
   }
   /* USER CODE END 3 */
 }
 
 /**
-  * @brief System Clock Configuration
-  * @retval None
-  */
-void SystemClock_Config(void)
-{
+ * @brief System Clock Configuration
+ * @retval None
+ */
+void SystemClock_Config(void) {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
   /** Supply configuration update enable
-  */
+   */
   HAL_PWREx_ConfigSupply(PWR_LDO_SUPPLY);
 
   /** Configure the main internal regulator output voltage
-  */
+   */
   __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
 
-  while(!__HAL_PWR_GET_FLAG(PWR_FLAG_VOSRDY)) {}
+  while (!__HAL_PWR_GET_FLAG(PWR_FLAG_VOSRDY)) {
+  }
 
   /** Initializes the RCC Oscillators according to the specified parameters
-  * in the RCC_OscInitTypeDef structure.
-  */
+   * in the RCC_OscInitTypeDef structure.
+   */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
@@ -188,16 +192,15 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.PLL.PLLRGE = RCC_PLL1VCIRANGE_2;
   RCC_OscInitStruct.PLL.PLLVCOSEL = RCC_PLL1VCOWIDE;
   RCC_OscInitStruct.PLL.PLLFRACN = 0;
-  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
-  {
+  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) {
     Error_Handler();
   }
 
   /** Initializes the CPU, AHB and APB buses clocks
-  */
-  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
-                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2
-                              |RCC_CLOCKTYPE_D3PCLK1|RCC_CLOCKTYPE_D1PCLK1;
+   */
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK |
+                                RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2 |
+                                RCC_CLOCKTYPE_D3PCLK1 | RCC_CLOCKTYPE_D1PCLK1;
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.SYSCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_HCLK_DIV2;
@@ -206,8 +209,7 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.APB2CLKDivider = RCC_APB2_DIV2;
   RCC_ClkInitStruct.APB4CLKDivider = RCC_APB4_DIV2;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
-  {
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK) {
     Error_Handler();
   }
 }
@@ -335,9 +337,26 @@ void APP_QueryCommand(cJSON* json) {
 
   cJSON* data = cJSON_CreateObject();
   cJSON_AddNumberToObject(data, "volume", MP3_GetVolume());
+
+  short directedAccelration[3];
+  float pitch, roll, yaw;
+  double totalAccelration;
+  MPU6050_getData(&pitch, &roll, &yaw, &directedAccelration[0],
+                  &directedAccelration[1], &directedAccelration[2]);
+  totalAccelration =
+      sqrt(1.0 * directedAccelration[0] * directedAccelration[0] +
+           1.0 * directedAccelration[1] * directedAccelration[1] +
+           1.0 * directedAccelration[2] * directedAccelration[2]);
+  totalAccelration = totalAccelration / 16384.0;
+
   cJSON_AddBoolToObject(data, "isPlaying", MP3_GetIsPlaying());
-  cJSON_AddBoolToObject(data, "isMoving", cJSON_True);  // TODO: Add sensor data
-  cJSON_AddNumberToObject(data, "facing", 0);
+  if (totalAccelration > MOVING_UPPER_BOUND || totalAccelration < MOVING_LOWER_BOUND) {
+    cJSON_AddBoolToObject(data, "isMoving", cJSON_True);
+  } else {
+    cJSON_AddBoolToObject(data, "isMoving", cJSON_False);
+  }
+  cJSON_AddNumberToObject(data, "totalAccelration", totalAccelration);
+  cJSON_AddNumberToObject(data, "facing", pitch);
   cJSON_AddNumberToObject(data, "distance", 100);
 
   cJSON* response = cJSON_CreateObject();
@@ -355,11 +374,10 @@ void APP_QueryCommand(cJSON* json) {
 /* USER CODE END 4 */
 
 /**
-  * @brief  This function is executed in case of error occurrence.
-  * @retval None
-  */
-void Error_Handler(void)
-{
+ * @brief  This function is executed in case of error occurrence.
+ * @retval None
+ */
+void Error_Handler(void) {
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
   __disable_irq();
@@ -370,16 +388,15 @@ void Error_Handler(void)
   /* USER CODE END Error_Handler_Debug */
 }
 
-#ifdef  USE_FULL_ASSERT
+#ifdef USE_FULL_ASSERT
 /**
-  * @brief  Reports the name of the source file and the source line number
-  *         where the assert_param error has occurred.
-  * @param  file: pointer to the source file name
-  * @param  line: assert_param error line source number
-  * @retval None
-  */
-void assert_failed(uint8_t *file, uint32_t line)
-{
+ * @brief  Reports the name of the source file and the source line number
+ *         where the assert_param error has occurred.
+ * @param  file: pointer to the source file name
+ * @param  line: assert_param error line source number
+ * @retval None
+ */
+void assert_failed(uint8_t* file, uint32_t line) {
   /* USER CODE BEGIN 6 */
   /* User can add his own implementation to report the file name and line
      number, ex: printf("Wrong parameters value: file %s on line %d\r\n", file,
