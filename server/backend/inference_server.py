@@ -272,7 +272,16 @@ class InferenceServer:
         self.frame_rate_counter = FrameRateCounter()
 
     def _handle_console_command(self, command: dict):
-        pass  # TODO: handle console commands
+        if 'mode' in command:
+            if command['mode'] == 'direction':
+                for client in self.clients.values():
+                    client.mode = 'direction'
+            elif command['mode'] == 'ocr':
+                for client in self.clients.values():
+                    client.mode = 'ocr'
+            elif command['mode'] == 'idle':
+                for client in self.clients.values():
+                    client.mode = 'idle'
 
     def run(self):
         logger.info("Inference server started")

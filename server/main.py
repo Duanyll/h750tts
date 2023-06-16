@@ -40,9 +40,27 @@ def main():
     # handle keyboard interrupt
     try:
         while True:
-            speech = input('Enter command: ')
-            data = { 'type': 'text', 'text': speech }
-            info_queue.put((C.TYPE_JSON, json.dumps(data).encode('utf-8'), None))
+            command = input('Enter command: ')
+            command = command.lower().split(' ')
+            if command[0] == 'exit':
+                raise KeyboardInterrupt
+            elif command[0] == 'speak':
+                data = {
+                    'type': 'text',
+                    'text': ' '.join(command[1:]),
+                    'textType': 'broadcast'
+                }
+                info_queue.put((C.TYPE_JSON, json.dumps(data), None))
+            elif command[0] == 'mode':
+                data = {
+                    'type': 'console',
+                    'data': {
+                        'mode': command[1]
+                    }
+                }
+                infer_queue.put(data)
+            else:
+                print('Invalid command')
             
     except KeyboardInterrupt:
         print('KeyboardInterrupt')

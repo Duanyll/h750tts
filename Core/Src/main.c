@@ -291,7 +291,7 @@ void APP_PlayCommand(cJSON* json) {
 }
 
 void APP_SpeakCommand(cJSON* json) {
-  // { "command": "speak", "text": "中文 UTF-8 字符�?" }
+  // { "command": "speak", "text": "中文 UTF-8 字符串" }
   cJSON* text = cJSON_GetObjectItemCaseSensitive(json, "text");
   if (cJSON_IsString(text) && (text->valuestring != NULL)) {
     MP3_Speak(text->valuestring);
