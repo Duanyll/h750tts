@@ -11,7 +11,7 @@ import logging
 import os
 import time
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -65,14 +65,26 @@ class DepthPredicter:
         # predict walkable directions
         result = []
         for i in range(n):
-            canny = cv2.Canny(depth[i], 50, 10)
-            score = max_pool(canny) / 8 + max_pool(depth[i])
-            grad1score = score[-1] - score[-2]
-            grad2score = np.abs(score[-1] + score[-3] - score[-2] * 2)
-            disscore = score[-2].copy()
-            disscore[grad1score < 20] = 1000
-            disscore[grad2score > 20] = 1000
-            walkable = (disscore < np.min(disscore) + 30) * (disscore < 1000)
+            # canny = cv2.Canny(depth[i], 50, 10)
+            # score = max_pool(canny) / 8 + max_pool(depth[i])
+            # grad1score = score[-1] - score[-2]
+            # grad2score = np.abs(score[-1] + score[-3] - score[-2] * 2)
+            # disscore = score[-2].copy()
+            # disscore[grad1score < 20] = 1000
+            # disscore[grad2score > 20] = 1000
+            # walkable = (disscore < np.min(disscore) + 30) * (disscore < 1000)
+            h, w = depth[i].shape
+            x = np.linspace(0, w - 1, 12, dtype=np.int64)
+            sample_lines = depth[i, ::-1, x].astype(np.float32)
+            sample_grad = np.zeros_like(sample_lines)
+            for j in range(12):
+                sample_grad[j] = np.gradient(sample_lines[j])
+            dist = np.argmax(np.abs(sample_grad) > 4, axis=1)
+            dist[dist == 0] = h - 1
+            col = np.zeros_like(dist, dtype=np.float32)
+            for j in range(12):
+                col[j] = np.mean(sample_lines[j, :dist[j]])
+            walkable = (col< np.min(col) + 50) * (dist.astype(np.float32) > h * 0.15)
             result.append(walkable)
 
         return result
@@ -132,7 +144,7 @@ apriltag_detector: AprilTagDetector
 hand_detector: HandDetector
 def load():
     global depth_predicter, text_recognizer, apriltag_detector, hand_detector
-    # depth_predicter = DepthPredicter()
+    depth_predicter = DepthPredicter()
     text_recognizer = TextRecognizer()
     # apriltag_detector = AprilTagDetector()
     hand_detector = HandDetector()

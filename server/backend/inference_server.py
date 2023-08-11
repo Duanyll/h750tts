@@ -36,7 +36,7 @@ class DirectionClassifier:
                          5.5) if np.sum(result) > 0 else 0
         logger.debug(
             f'center_score: {center_score}, side_score: {side_score}, mean_position: {mean_position}')
-        if center_score > 0.3:
+        if center_score > 0.2:
             if mean_position < -1:
                 return 'left'
             elif mean_position > 1:
@@ -288,10 +288,12 @@ class InferenceServer:
         while True:
             if self.infer_queue.qsize() > self.batch_size * 2:
                 # drop old data
-                logger.warning(
+                logger.debug(
                     "Cannot process data fast enough, dropping old data")
                 for _ in range(self.infer_queue.qsize() - self.batch_size):
-                    self.infer_queue.get()
+                    data = self.infer_queue.get()
+                    if data['type'] == 'console':
+                        self._handle_console_command(data)
             if self.infer_queue.empty():
                 time.sleep(0.01)
                 continue
@@ -317,6 +319,7 @@ class InferenceServer:
                     # decode image
                     image = cv2.imdecode(np.frombuffer(
                         data['image'], dtype=np.uint8), cv2.IMREAD_COLOR)
+                    image = cv2.rotate(image, cv2.ROTATE_180)
                     client.handle_image(image, data['timestamp'])
                 if 'state' in data:
                     client.handle_state(data['state'], data['timestamp'])

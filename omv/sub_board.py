@@ -7,7 +7,7 @@ uart = None
 def init():
     global uart, pinyin_data
     uart = UART(3, 115200)
-    uart.init(115200, bits=8, parity=None, stop=1, timeout=1000)
+    uart.init(115200, bits=8, parity=None, stop=1, timeout=100)
 
 def speak(str):
     green_led.on()
@@ -43,3 +43,20 @@ def stop_speech():
     except:
         print("Error: Stop speech failed.")
         return False
+    
+def query():
+    global uart
+    data = json.dumps({"command": "query"})
+    uart.write(data)
+    uart.write("\n")
+    try:
+        line = uart.readline().decode().strip()
+        res = json.loads(line)
+        if res["code"] != 0:
+            print("Error: Query failed. Code %d" % res["code"])
+            return None
+        return res["data"]
+    except:
+        print("Error: Query failed.")
+        return None
+    

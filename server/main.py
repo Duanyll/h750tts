@@ -54,9 +54,7 @@ def main():
             elif command[0] == 'mode':
                 data = {
                     'type': 'console',
-                    'data': {
-                        'mode': command[1]
-                    }
+                    'mode': command[1]
                 }
                 infer_queue.put(data)
             else:

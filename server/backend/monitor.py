@@ -73,6 +73,7 @@ class Monitor:
             data = self.monitor_queue.get()
             if 'image_bytes' in data:
                 data['image'] = cv2.imdecode(np.frombuffer(data['image_bytes'], dtype=np.uint8), cv2.IMREAD_COLOR)
+                data['image'] = cv2.rotate(data['image'], cv2.ROTATE_180)
                 data_height, data_width, _ = data['image'].shape
                 self.w_scale = self.width / data_width
                 self.h_scale = self.height / data_height

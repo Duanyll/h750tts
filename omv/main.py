@@ -50,8 +50,10 @@ def update_direction(direction):
             direction_cooldown = current_time + 3000
 
 
-def update_text(text):
+def update_text(text, textType):
     # sub_board.stop_speech()
+    if textType == "focus":
+        sub_board.stop_speech()
     sub_board.speak(text)  # TODO: Text priority
 
 
@@ -93,13 +95,14 @@ def handle_server_data(data_type, data_bytes):
         if json['type'] == 'direction':
             update_direction(json['direction'])
         elif json['type'] == 'text':
-            update_text(json['text'])
+            update_text(json['text'], json['textType'])
         elif json['type'] == 'capture_mode':
             configure_capture_mode(json)
 
 
 def run():
     try:
+        sub_board.stop_speech()
         sub_board.speak("正在连接服务器")
         s = protocol.open_connection()
         sub_board.speak("服务器连接成功")
