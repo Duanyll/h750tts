@@ -193,6 +193,8 @@ class OCRBuffer:
         # remove expired results
         self.results = {
             result for result in self.results if not result.is_expired()}
+        if len(res) > 0:
+            print(f'Text`   : {res}')
         return res
 
     def get_monitor_data(self) -> dict:
@@ -282,10 +284,9 @@ class InferenceServer:
             elif command['mode'] == 'idle':
                 for client in self.clients.values():
                     client.mode = 'idle'
-
-    def run(self):
-        logger.info("Inference server started")
-        while True:
+                    
+    def loop(self):
+        try:
             if self.infer_queue.qsize() > self.batch_size * 2:
                 # drop old data
                 logger.debug(
@@ -296,7 +297,7 @@ class InferenceServer:
                         self._handle_console_command(data)
             if self.infer_queue.empty():
                 time.sleep(0.01)
-                continue
+                return
 
             # get data
             data = self.infer_queue.get()
@@ -343,3 +344,12 @@ class InferenceServer:
                     0]].get_monitor_data()
                 monitor_data['fps'] = self.frame_rate_counter.get_fps()
                 self.monitor_queue.put(monitor_data)
+        except Exception as e:
+            logger.exception(e)
+
+
+    def run(self):
+        logger.info("Inference server started")
+        print("Inference server started")
+        while True:
+            self.loop()

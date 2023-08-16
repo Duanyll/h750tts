@@ -10,9 +10,10 @@ def run_inference_server(infer_queue: mp.Queue, info_queue: mp.Queue, monitor_qu
     inference_server = InferenceServer(infer_queue, info_queue, monitor_queue)
     asyncio.run(inference_server.run())
 
-def run_monitor_server(monitor_queue: mp.Queue):
+
+def run_monitor_server(infer_queue: mp.Queue, info_queue: mp.Queue, monitor_queue: mp.Queue):
     from backend.monitor import Monitor
-    monitor = Monitor(monitor_queue)
+    monitor = Monitor(infer_queue, info_queue, monitor_queue)
     monitor.run()
 
 def run_stream_server(infer_queue: mp.Queue, info_queue: mp.Queue, monitor_queue: mp.Queue):
@@ -29,7 +30,7 @@ def main():
     # create processes
     inference_server_process = mp.Process(target=run_inference_server, args=(
         infer_queue, info_queue, monitor_queue))
-    monitor_server_process = mp.Process(target=run_monitor_server, args=(monitor_queue,))
+    monitor_server_process = mp.Process(target=run_monitor_server, args=(infer_queue, info_queue, monitor_queue))
     stream_server_process = mp.Process(target=run_stream_server, args=(infer_queue, info_queue, monitor_queue))
 
     # start processes

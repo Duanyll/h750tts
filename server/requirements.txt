@@ -1,0 +1,13 @@
+torch
+timm
+numpy
+torchvision
+einops
+matplotlib
+onnxruntime
+numpy
+opencv-python
+shapely
+pyclipper
+pillow
+requests
